@@ -1,0 +1,16 @@
+# Output
+dist-windows/
+dist/
+build/
+*.spec
+
+# Python
+__pycache__/
+*.py[cod]
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Zip
+*.zip
