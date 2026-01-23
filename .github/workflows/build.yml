@@ -27,11 +27,11 @@ jobs:
 
     - name: Build Windows EXE
       run: |
-        pyinstaller --noconfirm --onefile --windowed --name "IF300_Signal" --add-data "data_updater.py;." IF300_signal_app.py
+        pyinstaller --noconfirm --onefile --windowed --name "MultiStrategy" --add-data "data_updater.py;." --add-data "weekend_data_updater.py;." --add-data "strategy_if300.py;." --add-data "strategy_weekend.py;." signal_app_main.py
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: IF300-Signal-Windows
-        path: dist/IF300_Signal.exe
+        path: dist/MultiStrategy.exe
         retention-days: 30
