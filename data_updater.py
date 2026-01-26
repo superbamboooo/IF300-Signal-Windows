@@ -167,10 +167,14 @@ def _get_realtime_hexun():
         return None
 
 
-def get_realtime_price():
+def get_realtime_price(verify_all=True):
     """
-    获取IF季月合约实时行情（带多个备用接口）
-    返回: dict with keys: price, open, high, low, date, time, yesterday_close, source, contract
+    获取IF季月合约实时行情（带多个备用接口和数据验证）
+
+    参数:
+        verify_all: 如果为True，则获取所有数据源并验证一致性；否则使用第一个成功源
+
+    返回: dict with keys: price, open, high, low, date, time, yesterday_close, source, contract, sources_info
           或 None（如果所有接口都失败）
     """
     # 接口优先级列表（全部获取季月合约数据）
@@ -180,17 +184,63 @@ def get_realtime_price():
         ('和讯季月', _get_realtime_hexun),
     ]
 
+    if not verify_all:
+        # 旧的行为：返回第一个成功的
+        for name, func in providers:
+            try:
+                result = func()
+                if result and result.get('price', 0) > 0:
+                    return result
+            except Exception as e:
+                print(f"{name}接口异常: {e}")
+                continue
+        print("所有实时行情接口均失败")
+        return None
+
+    # 新的行为：验证所有数据源
+    sources_results = {}
+    sources_info = []
+
     for name, func in providers:
         try:
             result = func()
             if result and result.get('price', 0) > 0:
-                return result
+                sources_results[name] = result
+                sources_info.append({
+                    'source': name,
+                    'price': result.get('price', 0),
+                    'time': result.get('time', ''),
+                    'status': '成功'
+                })
+                print(f"{name}: {result.get('price', 0)}")
+            else:
+                sources_info.append({'source': name, 'status': '无数据'})
         except Exception as e:
+            sources_info.append({'source': name, 'status': f'失败: {str(e)[:30]}'})
             print(f"{name}接口异常: {e}")
-            continue
 
-    print("所有实时行情接口均失败")
-    return None
+    if not sources_results:
+        print("所有实时行情接口均失败")
+        return None
+
+    # 选择最可靠的结果（多数来源或第一个）
+    result = list(sources_results.values())[0]
+    result['sources_info'] = sources_info
+    result['sources_count'] = len(sources_results)
+
+    # 数据一致性检查
+    if len(sources_results) > 1:
+        prices = [r.get('price', 0) for r in sources_results.values()]
+        price_variance = max(prices) - min(prices)
+        result['price_variance'] = price_variance
+
+        # 盘中时间差异导致的价格差异可以接受（设置容差为1点）
+        if price_variance <= 1:
+            result['consistency_check'] = '✓ 数据一致'
+        else:
+            result['consistency_check'] = f'⚠ 数据差异{price_variance:.0f}点（可能因盘中时间差）'
+
+    return result
 
 
 def _get_yesterday_kline():
@@ -495,10 +545,17 @@ def update_from_main_contract():
 
         is_trade_day, is_trade_hours, time_hint = is_trading_time()
 
-        # 获取季月合约实时行情
-        realtime = get_realtime_price()
+        # 获取季月合约实时行情（启用多源验证）
+        print("\n【正在查询多数据源】")
+        print("  数据源1: 新浪财经 (新浪季月)")
+        print("  数据源2: 东方财富 (东方财富季月)")
+        print("  数据源3: 和讯期货 (和讯季月)")
+        print()
+        realtime = get_realtime_price(verify_all=True)
 
         if realtime and realtime.get('price', 0) > 0:
+            # 准备详细的数据源信息反馈
+            sources_info = realtime.get('sources_info', [])
             # ========== 修正前一交易日完整OHLC数据 ==========
             # 尝试获取前一交易日的完整K线数据来修正
             yesterday_kline = _get_yesterday_kline()
@@ -571,13 +628,42 @@ def update_from_main_contract():
 
             df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
+            # 构建详细反馈信息
+            sources_text = ""
+            if sources_info:
+                sources_text += "\n【数据来源验证】\n"
+                success_count = sum(1 for s in sources_info if s.get('status') == '成功')
+                for info in sources_info:
+                    status = info['status']
+                    # 为成功的源添加✓标记
+                    if status == '成功':
+                        sources_text += f"  ✓ {info['source']}: {status}"
+                        if info.get('price'):
+                            sources_text += f" ({info['price']})"
+                    else:
+                        sources_text += f"  ✗ {info['source']}: {status}"
+                    sources_text += "\n"
+
+                if success_count > 1:
+                    sources_text += f"\n✓ 多源验证: {success_count}个数据源都已确认\n"
+                    if realtime.get('consistency_check'):
+                        sources_text += f"{realtime['consistency_check']}\n"
+                    if realtime.get('price_variance'):
+                        sources_text += f"（最大价差: {realtime['price_variance']:.0f}点）\n"
+
+                sources_text += f"→ 本次使用数据源: {realtime['source']}\n"
+
             if is_trade_day:
-                return f"数据更新成功，合约{current_contract}，最新价{realtime['price']}，日期{today}"
+                return (f"✓ 数据更新成功\n"
+                        f"合约: {current_contract}\n"
+                        f"最新价: {realtime['price']}\n"
+                        f"获取时间: {realtime.get('time', '(本地)')}"
+                        f"{sources_text}")
             else:
-                return f"非交易日，已校验历史数据，最新日期: {latest_date}"
+                return f"非交易日，已校验历史数据，最新日期: {latest_date}{sources_text}"
         else:
             if is_trade_day:
-                return f"获取实时行情失败，数据保持不变，最新日期: {latest_date}"
+                return f"✗ 获取实时行情失败，数据保持不变，最新日期: {latest_date}"
             else:
                 return f"非交易日，数据最新日期: {latest_date}"
 
@@ -588,22 +674,16 @@ def update_from_main_contract():
 def update_if_data():
     """
     自动更新IF季月合约数据
-    打包环境使用主连推断方法，开发环境尝试akshare
+    优先使用主连推断方法（支持多源验证），akshare作为备选
     """
-    # 打包环境直接使用主连推断方法（不依赖akshare）
-    if getattr(sys, 'frozen', False):
-        try:
-            return update_from_main_contract()
-        except Exception as e:
-            raise Exception(f"数据更新失败: {str(e)}")
-
-    # 开发环境尝试akshare
+    # 优先使用主连推断方法（支持多源数据验证）
     try:
-        return update_quarterly_data_akshare()
+        return update_from_main_contract()
     except Exception as e:
-        print(f"akshare更新失败: {e}，尝试主连推断方法")
+        print(f"主连推断方法失败: {e}，尝试akshare")
+        # 备选：尝试akshare
         try:
-            return update_from_main_contract()
+            return update_quarterly_data_akshare()
         except Exception as e2:
             raise Exception(f"数据更新失败: {str(e2)}")
 

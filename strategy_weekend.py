@@ -338,13 +338,15 @@ class WeekendStrategyFrame:
             return
 
         latest = self.df[self.df['is_warmup'] == False].iloc[-1]
-        current_date = latest['日期']
         price = latest['收盘']
         ma5 = latest['MA5']
         ma10 = latest['MA10']
         ma30 = latest['MA30']
-        weekday = latest['weekday']
-        month = latest['month']
+
+        # 使用系统当前时间，而不是数据文件中的日期
+        current_date = datetime.now()
+        weekday = current_date.weekday()
+        month = current_date.month
 
         self.date_var.set(current_date.strftime('%Y-%m-%d'))
         self.weekday_var.set(WEEKDAY_NAMES[weekday])
