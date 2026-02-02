@@ -600,10 +600,18 @@ class WeekendStrategyFrame:
             change_str = "--"
 
         weekday = WEEKDAY_NAMES[date.weekday()]
+
+        # 获取MA30数据
+        ma30_value = row.get('MA30', None)
+        if pd.notna(ma30_value):
+            ma30_str = f"\nMA30: {ma30_value:.3f}"
+        else:
+            ma30_str = ""
+
         text = (f"{date.strftime('%Y-%m-%d')} {weekday}\n"
                 f"开: {open_p:.3f}  高: {high_p:.3f}\n"
                 f"低: {low_p:.3f}  收: {close_p:.3f}\n"
-                f"涨跌: {change_str}")
+                f"涨跌: {change_str}{ma30_str}")
 
         # 智能tooltip位置
         data_len = len(self.kline_data)
@@ -619,15 +627,23 @@ class WeekendStrategyFrame:
         y_min, y_max = self.ax.get_ylim()
         y_range = y_max - y_min
         near_top = high_p > y_min + y_range * 0.75
+        near_bottom = low_p < y_min + y_range * 0.25  # 检查是否靠近底部
 
         if near_top:
+            # 靠近顶部，tooltip显示在下方（距离近一些）
             anchor_y = low_p
-            offset_y = -80
+            offset_y = 10
             va = 'top'
+        elif near_bottom:
+            # 靠近底部，tooltip显示在上方
+            anchor_y = high_p
+            offset_y = -10
+            va = 'bottom'
         else:
+            # 中间位置，tooltip显示在下方
             anchor_y = high_p
             offset_y = 10
-            va = 'bottom'
+            va = 'top'
 
         if self.hover_annotation is None:
             self.hover_annotation = self.ax.annotate(
