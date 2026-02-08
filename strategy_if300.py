@@ -380,11 +380,11 @@ class IF300StrategyFrame:
             return
 
         latest = self.df[self.df['is_warmup'] == False].iloc[-1]
-        current_date = latest['日期']
+        current_date = datetime.now()  # 改为显示今天日期，而不是数据的最后日期
         price = latest['收盘']
         ma60 = latest['MA60']
-        weekday = latest['weekday']
-        month = latest['month']
+        weekday = current_date.weekday()  # 改为用今天的weekday
+        month = current_date.month  # 改为用今天的month
 
         self.date_var.set(current_date.strftime('%Y-%m-%d'))
         self.weekday_var.set(WEEKDAY_NAMES[weekday])
