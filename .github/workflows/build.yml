@@ -27,11 +27,40 @@ jobs:
 
     - name: Build Windows EXE
       run: |
-        pyinstaller --noconfirm --onefile --windowed --name "MultiStrategy" --add-data "data_updater.py;." --add-data "weekend_data_updater.py;." --add-data "strategy_if300.py;." --add-data "strategy_weekend.py;." signal_app_main.py
+        pyinstaller --noconfirm --onedir --windowed --name "MultiStrategy" ^
+          --add-data "data_updater.py;." ^
+          --add-data "weekend_data_updater.py;." ^
+          --add-data "strategy_if300.py;." ^
+          --add-data "strategy_weekend.py;." ^
+          --add-data "data;data" ^
+          signal_app_main.py
 
-    - name: Upload artifact
+        # 复制data目录到dist目录（确保数据文件可用）
+        if exist dist\MultiStrategy\data (
+          echo Data directory already in dist
+        ) else (
+          if exist data (
+            xcopy data dist\MultiStrategy\data /E /I /Y
+            echo Copied data directory to dist
+          )
+        )
+
+        # 创建一个包含exe和data的压缩文件用于发布
+        cd dist
+        7z a -r MultiStrategy-Windows.zip MultiStrategy\
+        cd ..
+
+    - name: Upload artifact (Directory version)
       uses: actions/upload-artifact@v4
       with:
         name: IF300-Signal-Windows
-        path: dist/MultiStrategy.exe
+        path: dist/MultiStrategy/
+        retention-days: 30
+
+    - name: Upload artifact (Zip version)
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: IF300-Signal-Windows-Zip
+        path: dist/MultiStrategy-Windows.zip
         retention-days: 30

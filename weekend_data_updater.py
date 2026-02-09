@@ -18,6 +18,43 @@ import requests
 from datetime import datetime, timedelta
 
 
+def is_trading_date(date):
+    """
+    检查指定日期是否是交易日
+    参数: date - datetime.date 对象
+    返回: True/False
+    """
+    # 周末不是交易日
+    if date.weekday() >= 5:
+        return False
+
+    # 国内期货市场假日（2024-2026年主要假日）
+    # 这是一个基础列表，需要根据实际情况更新
+    holidays = {
+        # 2024年
+        (2024, 1, 1),   # 元旦
+        (2024, 2, 10), (2024, 2, 11), (2024, 2, 12), (2024, 2, 13), (2024, 2, 14), (2024, 2, 15), (2024, 2, 16), (2024, 2, 17),  # 春节
+        (2024, 4, 4), (2024, 4, 5), (2024, 4, 6),  # 清明
+        (2024, 5, 1), (2024, 5, 2), (2024, 5, 3), (2024, 5, 4), (2024, 5, 5),  # 劳动节
+        (2024, 6, 10),  # 端午
+        (2024, 9, 15), (2024, 9, 16), (2024, 9, 17),  # 中秋
+        (2024, 9, 18),  # 调休
+        (2024, 10, 1), (2024, 10, 2), (2024, 10, 3), (2024, 10, 4), (2024, 10, 5), (2024, 10, 6), (2024, 10, 7),  # 国庆
+        # 2025年
+        (2025, 1, 1),  # 元旦
+        (2025, 1, 29), (2025, 1, 30), (2025, 1, 31), (2025, 2, 1), (2025, 2, 2), (2025, 2, 3), (2025, 2, 4),  # 春节
+        (2025, 4, 4), (2025, 4, 5), (2025, 4, 6),  # 清明
+        (2025, 5, 1), (2025, 5, 2), (2025, 5, 3), (2025, 5, 4), (2025, 5, 5),  # 劳动节
+        (2025, 6, 2),  # 端午
+        (2025, 10, 1), (2025, 10, 2), (2025, 10, 3), (2025, 10, 4), (2025, 10, 5), (2025, 10, 6), (2025, 10, 7),  # 国庆
+        # 2026年
+        (2026, 1, 1),  # 元旦
+        (2026, 2, 17), (2026, 2, 18), (2026, 2, 19), (2026, 2, 20), (2026, 2, 21), (2026, 2, 22), (2026, 2, 23), (2026, 2, 24),  # 春节
+    }
+
+    return (date.year, date.month, date.day) not in holidays
+
+
 def is_trading_time():
     """
     判断当前是否在交易时段内
@@ -27,6 +64,7 @@ def is_trading_time():
     返回: (is_trading_day, is_trading_hours, time_hint)
     """
     now = datetime.now()
+    today = now.date()
     weekday = now.weekday()  # 0=周一, 6=周日
     hour = now.hour
     minute = now.minute
@@ -35,6 +73,10 @@ def is_trading_time():
     # 周末不是交易日
     if weekday >= 5:
         return False, False, "周末休市"
+
+    # 检查是否是国家假日
+    if not is_trading_date(today):
+        return False, False, "假日休市"
 
     # 交易时段（以分钟计）
     morning_start = 9 * 60 + 30   # 9:30
@@ -81,6 +123,13 @@ def _get_realtime_sina():
         # 新浪股票数据格式
         # 0:名称, 1:今开, 2:昨收, 3:现价, 4:最高, 5:最低, 6:买一价, 7:卖一价
         # 8:成交量, 9:成交额, ...30:日期, 31:时间
+
+        # 获取日期，但不使用当前日期作为回退
+        date_str = data[30] if len(data) > 30 and data[30] else None
+        if not date_str:
+            print(f"⚠️ 新浪API未返回日期信息，数据可能不可靠")
+            return None
+
         return {
             'name': data[0],
             'open': float(data[1]) if data[1] else 0,
@@ -90,8 +139,8 @@ def _get_realtime_sina():
             'low': float(data[5]) if data[5] else 0,
             'volume': int(float(data[8])) if data[8] else 0,
             'amount': float(data[9]) if data[9] else 0,
-            'date': data[30] if len(data) > 30 else datetime.now().strftime('%Y-%m-%d'),
-            'time': data[31] if len(data) > 31 else datetime.now().strftime('%H:%M:%S'),
+            'date': date_str,
+            'time': data[31] if len(data) > 31 and data[31] else datetime.now().strftime('%H:%M:%S'),
             'source': '新浪'
         }
     except Exception as e:
@@ -238,17 +287,73 @@ def get_etf_realtime_price():
 
 
 def get_data_path():
-    """获取数据目录路径"""
+    """
+    获取数据目录路径
+    支持多种部署方式：
+    1. 开发环境 (sys.frozen=False)
+    2. Windows EXE (--onefile模式)
+    3. Mac .app
+    4. Linux 打包
+    """
+    # ========== 尝试1: 打包后的资源目录 (PyInstaller _internal) ==========
     if getattr(sys, 'frozen', False):
-        base_path = os.path.dirname(sys.executable)
+        # Windows EXE 或 Mac .app 打包环境
+        exe_dir = os.path.dirname(sys.executable)
+
+        # 检查多个可能的路径
+        possible_paths = [
+            # PyInstaller --onefile 模式：_internal 子目录
+            os.path.join(exe_dir, '_internal', 'data'),
+            # PyInstaller --onedir 模式：同级data目录
+            os.path.join(exe_dir, 'data'),
+            # 上级目录的data
+            os.path.join(os.path.dirname(exe_dir), 'data'),
+            # 当前目录的data
+            os.path.join(os.getcwd(), 'data'),
+        ]
+
+        for path in possible_paths:
+            if os.path.exists(path):
+                print(f"[数据路径] 找到: {path}")
+                return path
+
+        # 如果都没找到，在当前目录创建data目录
+        data_path = os.path.join(exe_dir, 'data')
+        print(f"[数据路径] 未找到现有data目录，将在 {data_path} 创建")
+
+    # ========== 尝试2: 开发环境 ==========
     else:
+        # Python脚本直接运行
         base_path = os.path.dirname(os.path.abspath(__file__))
 
-    data_path = os.path.join(os.path.dirname(base_path), 'data')
-    if not os.path.exists(data_path):
+        # 先尝试当前目录的data
         data_path = os.path.join(base_path, 'data')
-        if not os.path.exists(data_path):
-            os.makedirs(data_path)
+        if os.path.exists(data_path):
+            return data_path
+
+        # 再尝试上级目录的data（适配不同的项目结构）
+        parent_data_path = os.path.join(os.path.dirname(base_path), 'data')
+        if os.path.exists(parent_data_path):
+            return parent_data_path
+
+        # 都没有就在当前目录创建
+        data_path = os.path.join(base_path, 'data')
+
+    # ========== 创建目录 ==========
+    if not os.path.exists(data_path):
+        try:
+            os.makedirs(data_path, exist_ok=True)
+            print(f"[数据路径] 创建目录成功: {data_path}")
+        except Exception as e:
+            print(f"[错误] 无法创建data目录: {data_path}")
+            print(f"       原因: {str(e)}")
+            print(f"       当前工作目录: {os.getcwd()}")
+            # 回退到临时目录
+            import tempfile
+            data_path = os.path.join(tempfile.gettempdir(), 'if300_data')
+            os.makedirs(data_path, exist_ok=True)
+            print(f"[警告] 使用临时目录: {data_path}")
+
     return data_path
 
 
@@ -413,20 +518,45 @@ def update_from_eastmoney():
 
             if latest_date < today:
                 is_trade_day, is_trade_hours, _ = is_trading_time()
-                if is_trade_day:
+                # 增强检查：确保只有真正的交易日才添加数据
+                if is_trade_day and is_trading_date(today):
                     realtime = get_etf_realtime_price()
                     if realtime and realtime.get('price', 0) > 0:
-                        today_row = {
-                            '日期': pd.Timestamp(today),
-                            '开盘': realtime.get('open', realtime['price']),
-                            '最高': realtime.get('high', realtime['price']),
-                            '最低': realtime.get('low', realtime['price']),
-                            '收盘': realtime['price'],
-                            '成交量': realtime.get('volume', 0)
-                        }
-                        df = pd.concat([df, pd.DataFrame([today_row])], ignore_index=True)
-                        df = df.sort_values('日期').reset_index(drop=True)
-                        print(f"已添加今日实时数据: {realtime['price']}")
+                        # 验证返回的日期也应该是交易日
+                        returned_date_str = realtime.get('date', '')
+                        if returned_date_str:
+                            try:
+                                returned_date = pd.to_datetime(returned_date_str).date()
+                                # 检查返回的日期是否有效（不应该是周末）
+                                if returned_date.weekday() >= 5:
+                                    print(f"⚠️ 警告：API返回的日期{returned_date}是周末，忽略此数据")
+                                    pass
+                                else:
+                                    today_row = {
+                                        '日期': pd.Timestamp(today),
+                                        '开盘': realtime.get('open', realtime['price']),
+                                        '最高': realtime.get('high', realtime['price']),
+                                        '最低': realtime.get('low', realtime['price']),
+                                        '收盘': realtime['price'],
+                                        '成交量': realtime.get('volume', 0)
+                                    }
+                                    df = pd.concat([df, pd.DataFrame([today_row])], ignore_index=True)
+                                    df = df.sort_values('日期').reset_index(drop=True)
+                                    print(f"已添加今日实时数据: {realtime['price']}")
+                            except:
+                                pass
+                        else:
+                            today_row = {
+                                '日期': pd.Timestamp(today),
+                                '开盘': realtime.get('open', realtime['price']),
+                                '最高': realtime.get('high', realtime['price']),
+                                '最低': realtime.get('low', realtime['price']),
+                                '收盘': realtime['price'],
+                                '成交量': realtime.get('volume', 0)
+                            }
+                            df = pd.concat([df, pd.DataFrame([today_row])], ignore_index=True)
+                            df = df.sort_values('日期').reset_index(drop=True)
+                            print(f"已添加今日实时数据: {realtime['price']}")
 
             df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
