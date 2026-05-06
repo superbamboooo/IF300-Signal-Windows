@@ -28,6 +28,8 @@ jobs:
     - name: Build Windows EXE
       run: |
         pyinstaller --noconfirm --onedir --windowed --name "MultiStrategy" ^
+          --add-data "path_manager.py;." ^
+          --add-data "init_data_path.py;." ^
           --add-data "data_updater.py;." ^
           --add-data "weekend_data_updater.py;." ^
           --add-data "strategy_if300.py;." ^
@@ -35,20 +37,28 @@ jobs:
           --add-data "data;data" ^
           signal_app_main.py
 
-        # 复制data目录到dist目录（确保数据文件可用）
-        if exist dist\MultiStrategy\data (
-          echo Data directory already in dist
-        ) else (
-          if exist data (
-            xcopy data dist\MultiStrategy\data /E /I /Y
-            echo Copied data directory to dist
-          )
-        )
+        echo "Build completed!"
+      shell: cmd
 
-        # 创建一个包含exe和data的压缩文件用于发布
+    - name: Copy data files (Windows)
+      run: |
+        # 使用 PowerShell 的 Copy-Item 来处理中文路径
+        if (Test-Path "data") {
+          Copy-Item -Path "data" -Destination "dist\MultiStrategy\data" -Recurse -Force
+          Write-Host "Data directory copied successfully"
+        } else {
+          Write-Host "Warning: data directory not found"
+        }
+      shell: pwsh
+
+    - name: Create release zip (Windows)
+      run: |
         cd dist
-        7z a -r MultiStrategy-Windows.zip MultiStrategy\
+        # 使用 PowerShell Compress-Archive 创建压缩包
+        Compress-Archive -Path "MultiStrategy" -DestinationPath "MultiStrategy-Windows.zip" -Force
+        Write-Host "Zip file created successfully"
         cd ..
+      shell: pwsh
 
     - name: Upload artifact (Directory version)
       uses: actions/upload-artifact@v4

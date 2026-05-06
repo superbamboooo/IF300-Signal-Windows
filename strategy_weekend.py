@@ -2,10 +2,13 @@
 # -*- coding: utf-8 -*-
 """
 ================================================================================
-周末效应 V9 策略模块 - 创业板ETF周末效应策略
+周末效应 V10.02 策略模块 - 创业板ETF周末效应策略
 ================================================================================
 标的：创业板ETF (159915)
-策略：利用"周末效应"，周四/周五买入 + 补充跌幅触发策略
+策略：
+1. 保留原 v9 的周四 / 周五策略
+2. 策略1升级为两段式 3%/4% 回撤买入
+3. 卖点升级为 v10.02 组合版反弹卖点
 ================================================================================
 """
 
@@ -37,28 +40,32 @@ else:
     plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'Noto Sans CJK SC', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
-# ==================== 策略参数（与V9一致）====================
+# 导入统一的路径管理模块
+from path_manager import get_data_path
+
+# ==================== 策略参数（V10.02）====================
 MA30_THRESHOLD = 0.99       # MA30阈值
 MA30_MAX_DIST = 0.20        # MA30最大距离
 MA5_MAX_DIST = 0.05         # MA5最大距离
 MA10_MAX_DIST = 0.12        # MA10最大距离
-STOP_LOSS_RATE = 0.965      # 止损比例 (3.5%)
 EXCLUDE_MONTHS = [12]       # 排除月份
-DROP_THRESHOLD = 0.05       # 跌幅触发阈值
+
+ORIGINAL_STOP_LOSS_RATE = 0.965        # 原周四/周五策略止损 3.5%
+STRATEGY1_STOP_LOSS_RATE = 0.975       # 策略1止损 2.5%
+
+STRATEGY1_FIRST_STAGE = 0.03           # 3% 回撤
+STRATEGY1_SECOND_STAGE = 0.04          # 4% 回撤
+STRATEGY1_HOLD_TRADING_DAYS = 3        # 持有 3TD
+
+STRATEGY1_REBOUND_LOOKBACK = 3
+STRATEGY1_REBOUND_THRESHOLD = 0.08
+STRATEGY1_REBOUND_MIN_HOLD = 3
+
+ORIGINAL_REBOUND_LOOKBACK = 1
+ORIGINAL_REBOUND_THRESHOLD = 0.05
+ORIGINAL_REBOUND_MIN_HOLD = 2
 
 WEEKDAY_NAMES = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-
-
-def get_data_path():
-    """获取数据目录路径"""
-    if getattr(sys, 'frozen', False):
-        base_path = os.path.dirname(sys.executable)
-    else:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    data_path = os.path.join(os.path.dirname(base_path), 'data')
-    if not os.path.exists(data_path):
-        data_path = os.path.join(base_path, 'data')
-    return data_path
 
 
 class WeekendStrategyFrame:
@@ -107,7 +114,7 @@ class WeekendStrategyFrame:
         self.weekday_var = tk.StringVar(value="--")
         ttk.Label(row1, textvariable=self.weekday_var, font=('微软雅黑', 18, 'bold')).pack(side=tk.LEFT, padx=(5, 30))
 
-        ttk.Label(row1, text="收盘价:", font=('微软雅黑', 15)).pack(side=tk.LEFT)
+        ttk.Label(row1, text="当前价:", font=('微软雅黑', 15)).pack(side=tk.LEFT)
         self.price_var = tk.StringVar(value="--")
         ttk.Label(row1, textvariable=self.price_var, font=('微软雅黑', 18, 'bold'), foreground='blue').pack(side=tk.LEFT, padx=(5, 30))
 
@@ -196,8 +203,8 @@ class WeekendStrategyFrame:
         self.fri_result_label = ttk.Label(mid_frame, textvariable=self.fri_result_var, font=('微软雅黑', 18, 'bold'))
         self.fri_result_label.pack(anchor=tk.W, pady=(5, 0))
 
-        # 右列：补充买入条件（5%跌幅）
-        right_frame = ttk.LabelFrame(signal_cols, text="补充买入条件(5%跌幅)", padding="5")
+        # 右列：策略1两段式买入
+        right_frame = ttk.LabelFrame(signal_cols, text="策略1 两段式买入 (V10.02)", padding="5")
         right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
 
         self.sup_month_var = tk.StringVar(value="月份: --")
@@ -208,7 +215,11 @@ class WeekendStrategyFrame:
         self.sup_ma_label = ttk.Label(right_frame, textvariable=self.sup_ma_var, font=('微软雅黑', 15))
         self.sup_ma_label.pack(anchor=tk.W)
 
-        self.sup_drop_var = tk.StringVar(value="跌幅触发: --")
+        self.sup_ref_var = tk.StringVar(value="参考价/回撤线: --")
+        self.sup_ref_label = ttk.Label(right_frame, textvariable=self.sup_ref_var, font=('微软雅黑', 15))
+        self.sup_ref_label.pack(anchor=tk.W)
+
+        self.sup_drop_var = tk.StringVar(value="触发状态: --")
         self.sup_drop_label = ttk.Label(right_frame, textvariable=self.sup_drop_var, font=('微软雅黑', 15))
         self.sup_drop_label.pack(anchor=tk.W)
 
@@ -216,8 +227,8 @@ class WeekendStrategyFrame:
         self.sup_result_label = ttk.Label(right_frame, textvariable=self.sup_result_var, font=('微软雅黑', 18, 'bold'))
         self.sup_result_label.pack(anchor=tk.W, pady=(5, 0))
 
-        # ===== 可开仓价格区间 =====
-        price_range_frame = ttk.LabelFrame(main_frame, text="可开仓价格区间（基于MA30条件）", padding="10")
+        # ===== 可开仓价格区间与卖点规则 =====
+        price_range_frame = ttk.LabelFrame(main_frame, text="参考买卖规则", padding="10")
         price_range_frame.pack(fill=tk.X, pady=(0, 10))
 
         price_range_cols = ttk.Frame(price_range_frame)
@@ -232,7 +243,16 @@ class WeekendStrategyFrame:
 
         ttk.Label(range_frame, text="止损价:", font=('微软雅黑', 15, 'bold')).pack(side=tk.LEFT)
         self.stop_loss_var = tk.StringVar(value="--")
-        ttk.Label(range_frame, textvariable=self.stop_loss_var, font=('微软雅黑', 18, 'bold'), foreground='#8B0000').pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(range_frame, textvariable=self.stop_loss_var, font=('微软雅黑', 15, 'bold'), foreground='#8B0000').pack(side=tk.LEFT, padx=(5, 0))
+
+        sell_frame = ttk.Frame(price_range_frame)
+        sell_frame.pack(fill=tk.X, pady=(8, 0))
+
+        self.sell_rule_var = tk.StringVar(value="策略1卖点: --")
+        ttk.Label(sell_frame, textvariable=self.sell_rule_var, font=('微软雅黑', 14)).pack(anchor=tk.W)
+
+        self.sell_rule2_var = tk.StringVar(value="周四/周五卖点: --")
+        ttk.Label(sell_frame, textvariable=self.sell_rule2_var, font=('微软雅黑', 14)).pack(anchor=tk.W)
 
         # ===== K线图区 =====
         chart_frame = ttk.LabelFrame(main_frame, text="K线图", padding="5")
@@ -302,35 +322,78 @@ class WeekendStrategyFrame:
             messagebox.showerror("错误", f"加载数据失败:\n{str(e)}")
             self.status_var.set("数据加载失败")
 
-    def get_last_week_close(self, current_date):
-        """获取上周最后一个交易日的收盘价"""
-        if self.df is None:
+    def get_last_week_close_by_index(self, current_idx):
+        """基于索引获取上周最后一个交易日收盘价"""
+        if self.df is None or current_idx is None or current_idx <= 0:
             return None
 
         try:
-            current_idx = self.df[self.df['日期'] == current_date].index[0]
             current_week = self.df.loc[current_idx, 'year_week']
-
             for i in range(current_idx - 1, -1, -1):
-                prev_week = self.df.loc[i, 'year_week']
-                if prev_week != current_week:
+                if self.df.loc[i, 'year_week'] != current_week:
                     return self.df.loc[i, '收盘']
             return None
-        except:
+        except Exception:
             return None
 
-    def get_previous_high(self, current_date, days_back=1):
-        """获取N天前的最高价"""
-        if self.df is None:
+    def get_previous_high_by_index(self, current_idx, days_back=1):
+        """基于索引获取N天前的最高价"""
+        if self.df is None or current_idx is None:
             return None
 
         try:
-            current_idx = self.df[self.df['日期'] == current_date].index[0]
-            if current_idx >= days_back:
-                return self.df.loc[current_idx - days_back, '最高']
+            target_idx = current_idx - days_back
+            if target_idx >= 0:
+                return self.df.loc[target_idx, '最高']
             return None
-        except:
+        except Exception:
             return None
+
+    def get_previous_close_by_index(self, current_idx, days_back=1):
+        """基于索引获取N天前的收盘价"""
+        if self.df is None or current_idx is None:
+            return None
+
+        try:
+            target_idx = current_idx - days_back
+            if target_idx >= 0:
+                return self.df.loc[target_idx, '收盘']
+            return None
+        except Exception:
+            return None
+
+    def _evaluate_ma_filters(self, entry_price, ma5, ma10, ma30):
+        """评估均线过滤条件"""
+        if any(pd.isna(v) for v in [entry_price, ma5, ma10, ma30]):
+            return {
+                'valid': False,
+                'ma30_ok': False,
+                'ma30_dist_ok': False,
+                'ma5_dist_ok': False,
+                'ma10_dist_ok': False,
+                'text': 'MA条件: 数据不足',
+            }
+
+        ma30_ok = entry_price > ma30 * MA30_THRESHOLD
+        ma30_dist_ok = (entry_price - ma30) / ma30 <= MA30_MAX_DIST
+        ma5_dist_ok = (entry_price - ma5) / ma5 <= MA5_MAX_DIST
+        ma10_dist_ok = (entry_price - ma10) / ma10 <= MA10_MAX_DIST
+        valid = ma30_ok and ma30_dist_ok and ma5_dist_ok and ma10_dist_ok
+
+        text = (
+            f"MA条件: {'✓' if valid else '✗'} "
+            f"(>{MA30_THRESHOLD:.2f}×MA30, MA30≤{MA30_MAX_DIST*100:.0f}%, "
+            f"MA5≤{MA5_MAX_DIST*100:.0f}%, MA10≤{MA10_MAX_DIST*100:.0f}%)"
+        )
+
+        return {
+            'valid': valid,
+            'ma30_ok': ma30_ok,
+            'ma30_dist_ok': ma30_dist_ok,
+            'ma5_dist_ok': ma5_dist_ok,
+            'ma10_dist_ok': ma10_dist_ok,
+            'text': text,
+        }
 
     def update_display(self):
         """更新界面显示"""
@@ -338,56 +401,91 @@ class WeekendStrategyFrame:
             return
 
         latest = self.df[self.df['is_warmup'] == False].iloc[-1]
+        latest_idx = latest.name
         price = latest['收盘']
-        ma5 = latest['MA5']
-        ma10 = latest['MA10']
-        ma30 = latest['MA30']
+        current_date = latest['日期']
+        weekday = int(latest['weekday'])
+        month = int(latest['month'])
+        previous_close = self.get_previous_close_by_index(latest_idx, 1)
+        last_week_close = self.get_last_week_close_by_index(latest_idx)
+        week_decline = ((price - last_week_close) / last_week_close) if last_week_close else None
 
-        # 使用系统当前时间，而不是数据文件中的日期
-        current_date = datetime.now()
-        weekday = current_date.weekday()
-        month = current_date.month
+        yesterday_high = self.get_previous_high_by_index(latest_idx, 1)
+        day_before_high = self.get_previous_high_by_index(latest_idx, 2)
+
+        close_ma_values = {
+            'ma5': latest['MA5'],
+            'ma10': latest['MA10'],
+            'ma30': latest['MA30'],
+        }
+        prev_row = self.df.iloc[latest_idx - 1] if latest_idx >= 1 else latest
+        strategy1_ma_values = {
+            'ma5': prev_row['MA5'],
+            'ma10': prev_row['MA10'],
+            'ma30': prev_row['MA30'],
+        }
 
         self.date_var.set(current_date.strftime('%Y-%m-%d'))
         self.weekday_var.set(WEEKDAY_NAMES[weekday])
         self.price_var.set(f"{price:.3f}")
-        self.ma5_var.set(f"{ma5:.3f}" if not pd.isna(ma5) else "--")
-        self.ma10_var.set(f"{ma10:.3f}" if not pd.isna(ma10) else "--")
-        self.ma30_var.set(f"{ma30:.3f}" if not pd.isna(ma30) else "--")
+        self.ma5_var.set(f"{close_ma_values['ma5']:.3f}" if not pd.isna(close_ma_values['ma5']) else "--")
+        self.ma10_var.set(f"{close_ma_values['ma10']:.3f}" if not pd.isna(close_ma_values['ma10']) else "--")
+        self.ma30_var.set(f"{close_ma_values['ma30']:.3f}" if not pd.isna(close_ma_values['ma30']) else "--")
 
-        # 计算周跌幅
-        last_week_close = self.get_last_week_close(current_date)
-        if last_week_close:
-            week_decline = (price - last_week_close) / last_week_close
-        else:
-            week_decline = None
-
-        # 计算跌幅触发
-        yesterday_high = self.get_previous_high(current_date, 1)
-        day_before_high = self.get_previous_high(current_date, 2)
-
-        self.analyze_signal(current_date, price, ma5, ma10, ma30, weekday, month, week_decline, yesterday_high, day_before_high)
-        self.update_price_range(price, ma30)
+        self.analyze_signal(
+            signal_date=current_date,
+            price=price,
+            open_price=latest['开盘'],
+            high_price=latest['最高'],
+            low_price=latest['最低'],
+            previous_close=previous_close,
+            close_ma_values=close_ma_values,
+            strategy1_ma_values=strategy1_ma_values,
+            weekday=weekday,
+            month=month,
+            week_decline=week_decline,
+            yesterday_high=yesterday_high,
+            day_before_high=day_before_high,
+            close_confirmed=True,
+            realtime_mode=False,
+        )
+        self.update_price_range(price, close_ma_values['ma30'])
         self.update_kline_chart()
 
-    def analyze_signal(self, current_date, price, ma5, ma10, ma30, weekday, month, week_decline, yesterday_high, day_before_high):
+    def analyze_signal(
+        self,
+        signal_date,
+        price,
+        open_price,
+        high_price,
+        low_price,
+        previous_close,
+        close_ma_values,
+        strategy1_ma_values,
+        weekday,
+        month,
+        week_decline,
+        yesterday_high,
+        day_before_high,
+        close_confirmed=True,
+        realtime_mode=False,
+    ):
         """分析交易信号"""
-        if pd.isna(ma30) or pd.isna(ma5) or pd.isna(ma10):
+        close_ma = self._evaluate_ma_filters(
+            price,
+            close_ma_values['ma5'],
+            close_ma_values['ma10'],
+            close_ma_values['ma30'],
+        )
+
+        if close_ma_values['ma30'] is None or pd.isna(close_ma_values['ma30']):
             self.thu_weekday_var.set("均线数据不足")
             self.fri_weekday_var.set("均线数据不足")
             self.sup_month_var.set("均线数据不足")
             return
 
-        # ===== 通用MA条件 =====
-        ma30_ok = price > ma30 * MA30_THRESHOLD
-        ma30_dist_ok = (price - ma30) / ma30 <= MA30_MAX_DIST
-        ma5_dist_ok = (price - ma5) / ma5 <= MA5_MAX_DIST
-        ma10_dist_ok = (price - ma10) / ma10 <= MA10_MAX_DIST
-        ma_all_ok = ma30_ok and ma30_dist_ok and ma5_dist_ok and ma10_dist_ok
-
         month_ok = month not in EXCLUDE_MONTHS
-
-        ma_text = f"MA条件: {'✓' if ma_all_ok else '✗'} (MA30>{MA30_THRESHOLD}, 距离≤{MA30_MAX_DIST*100:.0f}%)"
+        mode_hint = "（实时估算）" if realtime_mode else ""
 
         # ===== 周四买入条件 =====
         thu_weekday_ok = weekday == 3
@@ -397,23 +495,35 @@ class WeekendStrategyFrame:
         self.thu_month_var.set(f"月份: {month}月 ({'排除' if month in EXCLUDE_MONTHS else '可交易'})")
         self.thu_month_label.configure(foreground='green' if month_ok else 'red')
 
-        self.thu_ma_var.set(ma_text)
-        self.thu_ma_label.configure(foreground='green' if ma_all_ok else 'red')
+        self.thu_ma_var.set(f"{close_ma['text']}{mode_hint}")
+        self.thu_ma_label.configure(foreground='green' if close_ma['valid'] else 'red')
 
         # 周跌幅条件
         if week_decline is not None:
             decline_pct = week_decline * 100
-            thu_decline_ok = week_decline <= -0.02  # 需要跌≥2%
-            self.thu_decline_var.set(f"周跌幅: {decline_pct:.2f}% (需要≤-2%)")
-            self.thu_decline_label.configure(foreground='green' if thu_decline_ok else 'red')
+            if week_decline <= -0.06:
+                thu_subtype = "thursday_6plus"
+                thu_decline_text = f"周跌幅: {decline_pct:.2f}% (≥6%，下周四卖)"
+            elif week_decline <= -0.04:
+                thu_subtype = "thursday_4_6"
+                thu_decline_text = f"周跌幅: {decline_pct:.2f}% (4%-6%，下周四卖)"
+            elif week_decline <= -0.02:
+                thu_subtype = "thursday_2_4"
+                thu_decline_text = f"周跌幅: {decline_pct:.2f}% (2%-4%，下周二卖)"
+            else:
+                thu_subtype = None
+                thu_decline_text = f"周跌幅: {decline_pct:.2f}% (未达2%)"
+
+            self.thu_decline_var.set(thu_decline_text)
+            self.thu_decline_label.configure(foreground='green' if thu_subtype else 'red')
         else:
-            thu_decline_ok = False
+            thu_subtype = None
             self.thu_decline_var.set("周跌幅: 无数据")
             self.thu_decline_label.configure(foreground='gray')
 
-        thu_signal = thu_weekday_ok and month_ok and ma_all_ok and thu_decline_ok
+        thu_signal = thu_weekday_ok and month_ok and close_ma['valid'] and thu_subtype is not None
         if thu_signal:
-            self.thu_result_var.set("✓ 满足周四买入")
+            self.thu_result_var.set(f"✓ 满足周四买入：{thu_subtype}")
             self.thu_result_label.configure(foreground='green')
         else:
             self.thu_result_var.set("✗ 不满足")
@@ -427,56 +537,118 @@ class WeekendStrategyFrame:
         self.fri_month_var.set(f"月份: {month}月 ({'排除' if month in EXCLUDE_MONTHS else '可交易'})")
         self.fri_month_label.configure(foreground='green' if month_ok else 'red')
 
-        self.fri_ma_var.set(ma_text)
-        self.fri_ma_label.configure(foreground='green' if ma_all_ok else 'red')
+        self.fri_ma_var.set(f"{close_ma['text']}{mode_hint}")
+        self.fri_ma_label.configure(foreground='green' if close_ma['valid'] else 'red')
 
-        if week_decline is not None:
-            self.fri_decline_var.set(f"周跌幅: {decline_pct:.2f}%")
-            self.fri_decline_label.configure(foreground='blue')
+        day_change = None
+        if previous_close and previous_close != 0:
+            day_change = (price - previous_close) / previous_close
+
+        if week_decline is not None and day_change is not None:
+            if week_decline < -0.03:
+                fri_subtype = "friday_week_down"
+                fri_text = f"周跌幅 {week_decline*100:.2f}% (下周四卖)"
+            elif day_change < -0.03:
+                fri_subtype = "friday_day_down"
+                fri_text = f"周五涨跌 {day_change*100:.2f}% (下周三卖)"
+            elif day_change > 0.03 and week_decline > 0.05:
+                fri_subtype = "friday_strong"
+                fri_text = f"周强势: 日涨{day_change*100:.2f}%, 周涨{week_decline*100:.2f}% (下周一卖)"
+            else:
+                fri_subtype = "friday_normal"
+                fri_text = f"周跌幅 {week_decline*100:.2f}%, 日涨跌 {day_change*100:.2f}% (下周一卖)"
+
+            self.fri_decline_var.set(fri_text)
+            self.fri_decline_label.configure(foreground='green' if fri_subtype else 'red')
         else:
+            fri_subtype = None
             self.fri_decline_var.set("周跌幅: 无数据")
             self.fri_decline_label.configure(foreground='gray')
 
-        fri_signal = fri_weekday_ok and month_ok and ma_all_ok
+        fri_signal = fri_weekday_ok and month_ok and close_ma['valid'] and fri_subtype is not None
         if fri_signal:
-            self.fri_result_var.set("✓ 满足周五买入")
+            self.fri_result_var.set(f"✓ 满足周五买入：{fri_subtype}")
             self.fri_result_label.configure(foreground='green')
         else:
             self.fri_result_var.set("✗ 不满足")
             self.fri_result_label.configure(foreground='gray')
 
-        # ===== 补充买入条件（5%跌幅触发）=====
+        # ===== 策略1：两段式 3%/4% 回撤 =====
         self.sup_month_var.set(f"月份: {month}月 ({'排除' if month in EXCLUDE_MONTHS else '可交易'})")
         self.sup_month_label.configure(foreground='green' if month_ok else 'red')
 
-        self.sup_ma_var.set(ma_text)
-        self.sup_ma_label.configure(foreground='green' if ma_all_ok else 'red')
+        reference_candidates = []
+        if yesterday_high is not None and not pd.isna(yesterday_high):
+            reference_candidates.append(("昨高", yesterday_high))
+        if day_before_high is not None and not pd.isna(day_before_high):
+            reference_candidates.append(("前高", day_before_high))
+        if open_price is not None and not pd.isna(open_price):
+            reference_candidates.append(("今开", open_price))
 
-        # 检查跌幅触发
-        drop_triggered = False
-        drop_text = "跌幅触发: "
+        if not reference_candidates:
+            self.sup_ma_var.set("MA条件: 数据不足")
+            self.sup_ma_label.configure(foreground='gray')
+            self.sup_ref_var.set("参考价/回撤线: 无数据")
+            self.sup_ref_label.configure(foreground='gray')
+            self.sup_drop_var.set("触发状态: 无法判断")
+            self.sup_drop_label.configure(foreground='gray')
+            self.sup_result_var.set("✗ 不满足")
+            self.sup_result_label.configure(foreground='gray')
+            return
 
-        if yesterday_high is not None:
-            yesterday_drop = (price - yesterday_high) / yesterday_high
-            if yesterday_drop <= -DROP_THRESHOLD:
-                drop_triggered = True
-                drop_text += f"昨日高点跌{yesterday_drop*100:.2f}%"
+        ref_label, reference_price = max(reference_candidates, key=lambda item: item[1])
+        first_stage_price = reference_price * (1 - STRATEGY1_FIRST_STAGE)
+        second_stage_price = reference_price * (1 - STRATEGY1_SECOND_STAGE)
 
-        if not drop_triggered and day_before_high is not None:
-            day_before_drop = (price - day_before_high) / day_before_high
-            if day_before_drop <= -DROP_THRESHOLD:
-                drop_triggered = True
-                drop_text += f"前日高点跌{day_before_drop*100:.2f}%"
+        self.sup_ref_var.set(
+            f"参考价: {ref_label}={reference_price:.3f} | 3%线={first_stage_price:.3f} | 4%线={second_stage_price:.3f}"
+        )
+        self.sup_ref_label.configure(foreground='blue')
 
-        if not drop_triggered:
-            drop_text += "未触发(需≤-5%)"
+        strategy1_entry_price = None
+        strategy1_trigger_text = "触发状态: 未到3%线"
+        strategy1_triggered = False
 
-        self.sup_drop_var.set(drop_text)
-        self.sup_drop_label.configure(foreground='green' if drop_triggered else 'red')
+        if open_price <= second_stage_price:
+            strategy1_entry_price = open_price
+            strategy1_trigger_text = f"触发状态: 开盘直接低于4%线，按开盘价 {open_price:.3f}"
+            strategy1_triggered = True
+        elif low_price <= second_stage_price:
+            strategy1_entry_price = second_stage_price
+            strategy1_trigger_text = f"触发状态: 盘中触达4%线，按4%线 {second_stage_price:.3f}"
+            strategy1_triggered = True
+        elif low_price <= first_stage_price:
+            if close_confirmed:
+                if price >= first_stage_price:
+                    strategy1_entry_price = first_stage_price
+                    strategy1_trigger_text = f"触发状态: 收盘重新站回3%线，按3%线 {first_stage_price:.3f}"
+                    strategy1_triggered = True
+                else:
+                    strategy1_trigger_text = "触发状态: 跌到3%-4%区间，但收盘未站回3%线"
+            else:
+                if price >= first_stage_price:
+                    strategy1_trigger_text = "触发状态: 已回到3%线之上，需收盘确认后才能按3%线买入"
+                else:
+                    strategy1_trigger_text = "触发状态: 已进入3%-4%区间，继续观察4%线或收盘回到3%线"
 
-        sup_signal = month_ok and ma_all_ok and drop_triggered
-        if sup_signal:
-            self.sup_result_var.set("✓ 满足补充买入")
+        strategy1_check_price = strategy1_entry_price if strategy1_entry_price is not None else price
+        strategy1_ma = self._evaluate_ma_filters(
+            strategy1_check_price,
+            strategy1_ma_values['ma5'],
+            strategy1_ma_values['ma10'],
+            strategy1_ma_values['ma30'],
+        )
+
+        ma_hint = "（以前一交易日均线检查）" if not realtime_mode else "（按前一交易日均线实时估算）"
+        self.sup_ma_var.set(f"{strategy1_ma['text']}{ma_hint}")
+        self.sup_ma_label.configure(foreground='green' if strategy1_ma['valid'] else 'red')
+
+        self.sup_drop_var.set(strategy1_trigger_text)
+        self.sup_drop_label.configure(foreground='green' if strategy1_triggered else '#CC7A00')
+
+        strategy1_signal = month_ok and strategy1_ma['valid'] and strategy1_triggered
+        if strategy1_signal:
+            self.sup_result_var.set("✓ 满足策略1买入")
             self.sup_result_label.configure(foreground='green')
         else:
             self.sup_result_var.set("✗ 不满足")
@@ -487,6 +659,8 @@ class WeekendStrategyFrame:
         if pd.isna(ma30):
             self.buy_price_range_var.set("MA30数据不足")
             self.stop_loss_var.set("--")
+            self.sell_rule_var.set("策略1卖点: --")
+            self.sell_rule2_var.set("周四/周五卖点: --")
             return
 
         # 买入区间: MA30*0.99 ~ MA30*1.20
@@ -494,9 +668,18 @@ class WeekendStrategyFrame:
         buy_max = ma30 * (1 + MA30_MAX_DIST)
         self.buy_price_range_var.set(f"{buy_min:.3f} ~ {buy_max:.3f}")
 
-        # 止损价
-        stop_loss = price * STOP_LOSS_RATE
-        self.stop_loss_var.set(f"{stop_loss:.3f} (-3.5%)")
+        strategy1_stop = price * STRATEGY1_STOP_LOSS_RATE
+        original_stop = price * ORIGINAL_STOP_LOSS_RATE
+        self.stop_loss_var.set(
+            f"策略1 {strategy1_stop:.3f} (-2.5%) | 周四/周五 {original_stop:.3f} (-3.5%)"
+        )
+
+        self.sell_rule_var.set(
+            f"策略1卖点: 前{STRATEGY1_REBOUND_LOOKBACK}日低点反弹{int(STRATEGY1_REBOUND_THRESHOLD*100)}%，盘中卖，最短持有{STRATEGY1_REBOUND_MIN_HOLD}TD"
+        )
+        self.sell_rule2_var.set(
+            f"周四/周五卖点: 前{ORIGINAL_REBOUND_LOOKBACK}日低点反弹{int(ORIGINAL_REBOUND_THRESHOLD*100)}%，盘中卖，最短持有{ORIGINAL_REBOUND_MIN_HOLD}TD"
+        )
 
     def update_kline_chart(self):
         """更新K线图"""
@@ -559,7 +742,7 @@ class WeekendStrategyFrame:
 
         self.ax.legend(loc='upper left')
         self.ax.grid(True, alpha=0.3)
-        self.ax.set_title('创业板ETF (159915) K线图', fontsize=12)
+        self.ax.set_title('创业板ETF (159915) K线图 - 周末效应 V10.02', fontsize=12)
 
         self.fig.tight_layout()
         self.hover_annotation = None
@@ -728,32 +911,63 @@ class WeekendStrategyFrame:
         if self.df is None or len(self.df) == 0 or self.realtime_price is None:
             return
 
-        today = datetime.now()
+        latest = self.df[self.df['is_warmup'] == False].iloc[-1]
+        latest_idx = latest.name
+
+        date_str = self.realtime_price.get('date')
+        try:
+            today = pd.to_datetime(date_str) if date_str else datetime.now()
+        except Exception:
+            today = datetime.now()
+
         weekday = today.weekday()
         month = today.month
 
         price = self.realtime_price['price']
-        latest = self.df[self.df['is_warmup'] == False].iloc[-1]
-        ma5 = latest['MA5']
-        ma10 = latest['MA10']
-        ma30 = latest['MA30']
+        open_price = self.realtime_price.get('open', price)
+        high_price = self.realtime_price.get('high', price)
+        low_price = self.realtime_price.get('low', price)
+        previous_close = self.realtime_price.get('yesterday_close') or latest['收盘']
+
+        close_ma_values = {
+            'ma5': latest['MA5'],
+            'ma10': latest['MA10'],
+            'ma30': latest['MA30'],
+        }
+        strategy1_ma_values = close_ma_values.copy()
 
         self.date_var.set(today.strftime('%Y-%m-%d'))
         self.weekday_var.set(WEEKDAY_NAMES[weekday])
         self.price_var.set(f"{price:.3f}")
 
-        # 计算周跌幅（使用最近数据估算）
-        last_week_close = self.get_last_week_close(latest['日期'])
-        if last_week_close:
-            week_decline = (price - last_week_close) / last_week_close
-        else:
-            week_decline = None
+        self.ma5_var.set(f"{close_ma_values['ma5']:.3f}" if not pd.isna(close_ma_values['ma5']) else "--")
+        self.ma10_var.set(f"{close_ma_values['ma10']:.3f}" if not pd.isna(close_ma_values['ma10']) else "--")
+        self.ma30_var.set(f"{close_ma_values['ma30']:.3f}" if not pd.isna(close_ma_values['ma30']) else "--")
 
-        yesterday_high = self.get_previous_high(latest['日期'], 1)
-        day_before_high = self.get_previous_high(latest['日期'], 2)
+        last_week_close = self.get_last_week_close_by_index(latest_idx)
+        week_decline = ((price - last_week_close) / last_week_close) if last_week_close else None
 
-        self.analyze_signal(today, price, ma5, ma10, ma30, weekday, month, week_decline, yesterday_high, day_before_high)
-        self.update_price_range(price, ma30)
+        yesterday_high = latest['最高']
+        day_before_high = self.get_previous_high_by_index(latest_idx, 1)
+
+        self.analyze_signal(
+            signal_date=today,
+            price=price,
+            open_price=open_price,
+            high_price=high_price,
+            low_price=low_price,
+            previous_close=previous_close,
+            close_ma_values=close_ma_values,
+            strategy1_ma_values=strategy1_ma_values,
+            weekday=weekday,
+            month=month,
+            week_decline=week_decline,
+            yesterday_high=yesterday_high,
+            day_before_high=day_before_high,
+            close_confirmed=False,
+            realtime_mode=True,
+        )
+        self.update_price_range(price, close_ma_values['ma30'])
 
     def update_data(self):
         """更新K线数据"""
@@ -788,7 +1002,7 @@ class WeekendStrategyFrame:
     def show_strategy_info(self):
         """显示策略说明"""
         info_window = tk.Toplevel(self.root)
-        info_window.title("周末效应 V9 策略说明")
+        info_window.title("周末效应 V10.02 策略说明")
         info_window.geometry("700x600")
 
         text = scrolledtext.ScrolledText(info_window, font=('微软雅黑', 10), wrap=tk.WORD)
@@ -796,16 +1010,18 @@ class WeekendStrategyFrame:
 
         strategy_text = """
 ================================================================================
-周末效应 V9 - 创业板ETF策略
+周末效应 V10.02 - 创业板ETF策略
 ================================================================================
 标的：创业板ETF (159915)
 时间：2018-01-01 至今
 杠杆：2.5倍融资
 
 【历史表现】
-- 年均收益: 76.4%
-- 最大回撤: -18.9%
-- 收益回撤比: 4.04
+- 总交易: 249
+- 成功率: 58.23%
+- 年度独立累计净收益: 1064.14万
+- 最大年度回撤: -31.60%
+- 收益回撤比: 3.74
 
 ================================================================================
 【策略参数】
@@ -814,36 +1030,44 @@ class WeekendStrategyFrame:
 - MA30最大距离: 20%
 - MA5最大距离: 5%
 - MA10最大距离: 12%
-- 止损率: 3.5%
 - 排除月份: 12月
-- 跌幅触发阈值: 5%
+- 策略1止损: 2.5%
+- 周四/周五止损: 3.5%
 
 ================================================================================
-【周四买入条件】
+【策略1：两段式 3%/4% 回撤买入】
+================================================================================
+1. 参考价 R = max(昨天高点, 前天高点, 当天开盘价)
+2. 若开盘 <= 4% 回撤线，则按开盘价买入
+3. 否则若盘中最低 <= 4% 回撤线，则按 4% 回撤线买入
+4. 否则若盘中最低 <= 3% 回撤线，且收盘 >= 3% 回撤线，则按 3% 回撤线买入
+5. 以前一交易日均线 + 实际买入价检查 MA 框架
+6. 持有 3 个交易日，止损 2.5%
+7. 卖点优化：前3日最低点反弹8%时，盘中阈值卖，最短持有3TD
+
+================================================================================
+【周四策略】
 ================================================================================
 1. 当日是周四
 2. 非12月
-3. MA条件全部满足
-4. 本周跌幅≥2%
-   - 跌2%~4%: 持仓5天
-   - 跌4%~6%: 持仓7天
-   - 跌≥6%: 持仓7天
+3. MA条件满足
+4. 本周相对上周最后交易日跌幅:
+   - 2%~4%: thursday_2_4，下周二卖
+   - 4%~6%: thursday_4_6，下周四卖
+   - ≥6%: thursday_6plus，下周四卖
 
 ================================================================================
-【周五买入条件】
+【周五策略】
 ================================================================================
 1. 当日是周五
 2. 非12月
-3. MA条件全部满足
-4. 根据周涨跌和当日涨跌决定持仓天数
-
-================================================================================
-【补充买入条件】(5%跌幅触发)
-================================================================================
-1. 非12月
-2. MA条件全部满足
-3. 当前价格比昨日最高或前日最高下跌≥5%
-4. 持仓2天
+3. MA条件满足
+4. 子类型:
+   - friday_week_down: 本周跌超3%，下周四卖
+   - friday_day_down: 周五单日跌超3%，下周三卖
+   - friday_strong: 周五涨超3%且本周涨超5%，下周一卖
+   - friday_normal: 其他情况，下周一卖
+5. 卖点优化：前1日最低点反弹5%时，盘中阈值卖，最短持有2TD
 ================================================================================
 """
         text.insert(tk.END, strategy_text)
