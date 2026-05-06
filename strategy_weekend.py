@@ -223,6 +223,10 @@ class WeekendStrategyFrame:
         self.sup_drop_label = ttk.Label(right_frame, textvariable=self.sup_drop_var, font=('微软雅黑', 15))
         self.sup_drop_label.pack(anchor=tk.W)
 
+        self.sup_entry_var = tk.StringVar(value="策略1买点: --")
+        self.sup_entry_label = ttk.Label(right_frame, textvariable=self.sup_entry_var, font=('微软雅黑', 15))
+        self.sup_entry_label.pack(anchor=tk.W)
+
         self.sup_result_var = tk.StringVar(value="")
         self.sup_result_label = ttk.Label(right_frame, textvariable=self.sup_result_var, font=('微软雅黑', 18, 'bold'))
         self.sup_result_label.pack(anchor=tk.W, pady=(5, 0))
@@ -592,6 +596,8 @@ class WeekendStrategyFrame:
             self.sup_ref_label.configure(foreground='gray')
             self.sup_drop_var.set("触发状态: 无法判断")
             self.sup_drop_label.configure(foreground='gray')
+            self.sup_entry_var.set("策略1买点: --")
+            self.sup_entry_label.configure(foreground='gray')
             self.sup_result_var.set("✗ 不满足")
             self.sup_result_label.configure(foreground='gray')
             return
@@ -607,29 +613,36 @@ class WeekendStrategyFrame:
 
         strategy1_entry_price = None
         strategy1_trigger_text = "触发状态: 未到3%线"
+        strategy1_entry_text = "策略1买点: 未到3%线"
         strategy1_triggered = False
 
         if open_price <= second_stage_price:
             strategy1_entry_price = open_price
             strategy1_trigger_text = f"触发状态: 开盘直接低于4%线，按开盘价 {open_price:.3f}"
+            strategy1_entry_text = f"策略1买点: 开盘价 {open_price:.3f}"
             strategy1_triggered = True
         elif low_price <= second_stage_price:
             strategy1_entry_price = second_stage_price
             strategy1_trigger_text = f"触发状态: 盘中触达4%线，按4%线 {second_stage_price:.3f}"
+            strategy1_entry_text = f"策略1买点: 4%线 {second_stage_price:.3f}"
             strategy1_triggered = True
         elif low_price <= first_stage_price:
             if close_confirmed:
                 if price >= first_stage_price:
                     strategy1_entry_price = first_stage_price
                     strategy1_trigger_text = f"触发状态: 收盘重新站回3%线，按3%线 {first_stage_price:.3f}"
+                    strategy1_entry_text = f"策略1买点: 3%线 {first_stage_price:.3f}"
                     strategy1_triggered = True
                 else:
                     strategy1_trigger_text = "触发状态: 跌到3%-4%区间，但收盘未站回3%线"
+                    strategy1_entry_text = "策略1买点: 收盘未站回3%线，今日放弃"
             else:
                 if price >= first_stage_price:
                     strategy1_trigger_text = "触发状态: 已回到3%线之上，需收盘确认后才能按3%线买入"
+                    strategy1_entry_text = f"策略1买点: 若收盘确认，将按3%线 {first_stage_price:.3f}"
                 else:
                     strategy1_trigger_text = "触发状态: 已进入3%-4%区间，继续观察4%线或收盘回到3%线"
+                    strategy1_entry_text = f"策略1买点: 候选3%线 {first_stage_price:.3f} / 4%线 {second_stage_price:.3f}"
 
         strategy1_check_price = strategy1_entry_price if strategy1_entry_price is not None else price
         strategy1_ma = self._evaluate_ma_filters(
@@ -645,6 +658,8 @@ class WeekendStrategyFrame:
 
         self.sup_drop_var.set(strategy1_trigger_text)
         self.sup_drop_label.configure(foreground='green' if strategy1_triggered else '#CC7A00')
+        self.sup_entry_var.set(strategy1_entry_text)
+        self.sup_entry_label.configure(foreground='green' if strategy1_triggered else '#1F4E79')
 
         strategy1_signal = month_ok and strategy1_ma['valid'] and strategy1_triggered
         if strategy1_signal:
