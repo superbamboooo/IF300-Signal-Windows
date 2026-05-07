@@ -16,11 +16,15 @@ IF300 路径管理模块 - 统一数据路径配置和获取
   Mac/Linux: ~/.if300/config.json
 
 数据路径查找优先级：
-  1. 用户配置文件指定的路径（如果存在）
-  2. exe同级的 data/ 目录（最可靠）
-  3. exe同级的 _internal/data/ 目录（PyInstaller --onefile模式）
-  4. 脚本同级的 data/ 目录（开发环境）
-  5. 创建默认目录：exe同级或脚本同级的 data/
+  打包环境:
+    1. exe同级的 data/ 目录（最可靠，更新与读取保持一致）
+    2. exe同级的 _internal/data/ 目录（PyInstaller --onefile模式）
+    3. 用户配置文件指定的路径（仅作为回退）
+  开发环境:
+    1. 用户配置文件指定的路径（如果存在）
+    2. 脚本同级的 data/ 目录
+    3. 上级目录 data/ 目录
+    4. 创建默认目录：脚本同级的 data/
 
 ================================================================================
 """
@@ -81,18 +85,30 @@ def get_data_path():
     获取数据目录路径（统一实现）
 
     优先级：
+    打包环境：
+    1. exe同级data目录（Windows EXE，最可靠）
+    2. exe同级_internal/data目录（PyInstaller --onefile模式）
+    3. 配置文件指定的路径（仅回退）
+
+    开发环境：
     1. 配置文件指定的路径（如果存在且有效）
-    2. exe同级data目录（Windows EXE，最可靠）
-    3. exe同级_internal/data目录（PyInstaller --onefile模式）
-    4. 脚本同级data目录（开发环境）
-    5. 上级目录data（开发环境备选）
-    6. 自动创建默认目录
+    2. 脚本同级data目录
+    3. 上级目录data（开发环境备选）
+    4. 自动创建默认目录
 
     Returns:
         str: 数据目录的绝对路径
     """
 
-    # 1. 尝试从配置文件读取
+    # 打包环境优先使用程序自身目录的数据，避免“更新成功但读写不在同一目录”的问题
+    if getattr(sys, 'frozen', False):
+        runtime_path = _detect_runtime_local_data_path()
+        if runtime_path:
+            _save_config_path_if_needed(runtime_path)
+            logger.info(f"[路径] 打包环境优先使用程序同目录数据: {runtime_path}")
+            return runtime_path
+
+    # 开发环境或打包环境回退：尝试从配置文件读取
     saved_path = _load_config_path()
     if saved_path and _is_valid_data_path(saved_path):
         logger.info(f"[路径] 使用配置文件路径: {saved_path}")
@@ -111,6 +127,32 @@ def get_data_path():
     _save_config_path(default_path)
     logger.info(f"[路径] 使用默认路径: {default_path}")
     return default_path
+
+
+def _detect_runtime_local_data_path():
+    """
+    检测打包程序自身携带的数据目录。
+
+    Returns:
+        str | None: 找到则返回路径，否则返回 None
+    """
+    if not getattr(sys, 'frozen', False):
+        return None
+
+    exe_dir = os.path.dirname(sys.executable)
+    candidates = [
+        os.path.join(exe_dir, 'data'),
+        os.path.join(exe_dir, '_internal', 'data'),
+    ]
+
+    logger.info(f"[检测] 打包环境，优先检查程序同目录数据: {candidates}")
+
+    for path in candidates:
+        if _is_valid_data_path(path):
+            logger.info(f"[检测] 找到程序同目录数据: {path}")
+            return path
+
+    return None
 
 
 def _is_valid_data_path(path):
@@ -217,6 +259,13 @@ def _save_config_path(data_path):
 
     except Exception as e:
         logger.error(f"[配置] 保存失败: {e}")
+
+
+def _save_config_path_if_needed(data_path):
+    """仅在配置路径变化时才写入配置文件，减少无意义覆盖。"""
+    current_path = _load_config_path()
+    if current_path != data_path:
+        _save_config_path(data_path)
 
 
 def _create_default_path():
