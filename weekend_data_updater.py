@@ -16,6 +16,16 @@ import sys
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from path_manager import get_data_path
+
+
+MARKET_TZ = ZoneInfo('Asia/Shanghai')
+
+
+def get_market_now():
+    """获取中国市场当前时间（上海时区）。"""
+    return datetime.now(MARKET_TZ)
 
 
 def is_trading_date(date):
@@ -63,7 +73,7 @@ def is_trading_time():
     - 下午：13:00 - 15:00
     返回: (is_trading_day, is_trading_hours, time_hint)
     """
-    now = datetime.now()
+    now = get_market_now()
     today = now.date()
     weekday = now.weekday()  # 0=周一, 6=周日
     hour = now.hour
@@ -140,7 +150,7 @@ def _get_realtime_sina():
             'volume': int(float(data[8])) if data[8] else 0,
             'amount': float(data[9]) if data[9] else 0,
             'date': date_str,
-            'time': data[31] if len(data) > 31 and data[31] else datetime.now().strftime('%H:%M:%S'),
+            'time': data[31] if len(data) > 31 and data[31] else get_market_now().strftime('%H:%M:%S'),
             'source': '新浪'
         }
     except Exception as e:
@@ -170,7 +180,7 @@ def _get_realtime_tencent():
         # 腾讯数据格式
         # 1:名称, 3:现价, 4:昨收, 5:今开, 6:成交量, 7:外盘, 8:内盘
         # 9:买一价, ...33:最高, 34:最低, ...
-        now = datetime.now()
+        now = get_market_now()
         return {
             'name': data[1] if len(data) > 1 else '',
             'price': float(data[3]) if len(data) > 3 and data[3] else 0,
@@ -202,7 +212,7 @@ def _get_realtime_eastmoney():
 
         if result.get('data'):
             d = result['data']
-            now = datetime.now()
+            now = get_market_now()
             # 东方财富返回的价格需要除以1000
             return {
                 'name': d.get('f58', ''),
@@ -286,75 +296,58 @@ def get_etf_realtime_price():
     return None
 
 
-def get_data_path():
+# 注：get_data_path() 函数已统一到 path_manager 模块
+# 直接使用 from path_manager import get_data_path
+
+
+def _merge_today_realtime_row(df, refresh_existing=True):
     """
-    获取数据目录路径
-    支持多种部署方式：
-    1. 开发环境 (sys.frozen=False)
-    2. Windows EXE (--onefile模式)
-    3. Mac .app
-    4. Linux 打包
+    用实时行情补齐/刷新今日行。
+    返回: (df, changed, message)
     """
-    # ========== 尝试1: 打包后的资源目录 (PyInstaller _internal) ==========
-    if getattr(sys, 'frozen', False):
-        # Windows EXE 或 Mac .app 打包环境
-        exe_dir = os.path.dirname(sys.executable)
+    today = get_market_now().date()
+    latest_date = df['日期'].max().date()
 
-        # 检查多个可能的路径
-        possible_paths = [
-            # PyInstaller --onefile 模式：_internal 子目录
-            os.path.join(exe_dir, '_internal', 'data'),
-            # PyInstaller --onedir 模式：同级data目录
-            os.path.join(exe_dir, 'data'),
-            # 上级目录的data
-            os.path.join(os.path.dirname(exe_dir), 'data'),
-            # 当前目录的data
-            os.path.join(os.getcwd(), 'data'),
-        ]
+    if latest_date > today:
+        return df, False, ""
 
-        for path in possible_paths:
-            if os.path.exists(path):
-                print(f"[数据路径] 找到: {path}")
-                return path
+    is_trade_day, _, time_hint = is_trading_time()
+    if not (is_trade_day and is_trading_date(today)):
+        return df, False, time_hint
 
-        # 如果都没找到，在当前目录创建data目录
-        data_path = os.path.join(exe_dir, 'data')
-        print(f"[数据路径] 未找到现有data目录，将在 {data_path} 创建")
+    if latest_date == today and not refresh_existing:
+        return df, False, ""
 
-    # ========== 尝试2: 开发环境 ==========
-    else:
-        # Python脚本直接运行
-        base_path = os.path.dirname(os.path.abspath(__file__))
+    realtime = get_etf_realtime_price()
+    if not realtime or realtime.get('price', 0) <= 0:
+        return df, False, "未获取到今日实时行情"
 
-        # 先尝试当前目录的data
-        data_path = os.path.join(base_path, 'data')
-        if os.path.exists(data_path):
-            return data_path
-
-        # 再尝试上级目录的data（适配不同的项目结构）
-        parent_data_path = os.path.join(os.path.dirname(base_path), 'data')
-        if os.path.exists(parent_data_path):
-            return parent_data_path
-
-        # 都没有就在当前目录创建
-        data_path = os.path.join(base_path, 'data')
-
-    # ========== 创建目录 ==========
-    if not os.path.exists(data_path):
+    returned_date_str = realtime.get('date', '')
+    if returned_date_str:
         try:
-            os.makedirs(data_path, exist_ok=True)
-            print(f"[数据路径] 创建目录成功: {data_path}")
-        except Exception as e:
-            print(f"[错误] 无法创建data目录: {data_path}")
-            print(f"       原因: {str(e)}")
-            print(f"       当前工作目录: {os.getcwd()}")
-            # 回退到临时目录
-            import tempfile
-            data_path = os.path.join(tempfile.gettempdir(), 'if300_data')
-            os.makedirs(data_path, exist_ok=True)
-            print(f"[警告] 使用临时目录: {data_path}")
+            returned_date = pd.to_datetime(returned_date_str).date()
+            if returned_date != today or returned_date.weekday() >= 5:
+                print(f"⚠️ 警告：API返回日期 {returned_date} 与今日 {today} 不一致，忽略实时补数")
+                return df, False, "实时日期与今日不一致"
+        except Exception:
+            return df, False, "实时日期解析失败"
 
-    return data_path
+    today_row = {
+        '日期': pd.Timestamp(today),
+        '开盘': realtime.get('open', realtime['price']),
+        '最高': realtime.get('high', realtime['price']),
+        '最低': realtime.get('low', realtime['price']),
+        '收盘': realtime['price'],
+        '成交量': realtime.get('volume', 0)
+    }
+
+    df = pd.concat([df, pd.DataFrame([today_row])], ignore_index=True)
+    df = df.drop_duplicates(subset=['日期'], keep='last')
+    df = df.sort_values('日期').reset_index(drop=True)
+
+    if latest_date == today:
+        return df, True, f"已刷新今日实时数据: {realtime['price']:.3f}"
+    return df, True, f"已添加今日实时数据: {realtime['price']:.3f}"
 
 
 def update_etf_data():
@@ -430,14 +423,29 @@ def update_etf_data():
 
                     return f"数据更新成功，共{len(df)}条记录，最新日期: {df['日期'].max().strftime('%Y-%m-%d')}"
                 else:
+                    # 没有新日线时，仍尝试用实时行情补齐/刷新今日数据
+                    base_df = df_old.copy() if df_old is not None else pd.DataFrame(
+                        columns=['日期', '开盘', '最高', '最低', '收盘', '成交量']
+                    )
+                    df_merged, changed, merge_msg = _merge_today_realtime_row(base_df, refresh_existing=True)
+
+                    if changed:
+                        df_merged.to_csv(file_path, index=False, encoding='utf-8-sig')
+                        return (
+                            f"数据更新成功，共{len(df_merged)}条记录，最新日期: "
+                            f"{df_merged['日期'].max().strftime('%Y-%m-%d')}\n{merge_msg}"
+                        )
+
                     # 检查是否在交易时段
-                    is_trading_day, is_trading_hours, time_hint = is_trading_time()
-                    today = datetime.now().date()
+                    is_trading_day, _, time_hint = is_trading_time()
+                    today = get_market_now().date()
 
                     if is_trading_day and last_date.date() < today:
-                        return f"数据最新日期: {last_date.strftime('%Y-%m-%d')}\n{time_hint}"
+                        extra_hint = f"\n{merge_msg}" if merge_msg else ""
+                        return f"数据最新日期: {last_date.strftime('%Y-%m-%d')}\n{time_hint}{extra_hint}"
                     else:
-                        return f"数据已是最新，最新日期: {last_date.strftime('%Y-%m-%d')}"
+                        extra_hint = f"\n{merge_msg}" if merge_msg else ""
+                        return f"数据已是最新，最新日期: {last_date.strftime('%Y-%m-%d')}{extra_hint}"
             else:
                 return "未获取到新数据"
 
@@ -512,51 +520,9 @@ def update_from_eastmoney():
                 df = df.drop_duplicates(subset=['日期'], keep='last')
                 df = df.sort_values('日期').reset_index(drop=True)
 
-            # 如果是交易日，尝试获取今天的实时数据
-            today = datetime.now().date()
-            latest_date = df['日期'].max().date()
-
-            if latest_date < today:
-                is_trade_day, is_trade_hours, _ = is_trading_time()
-                # 增强检查：确保只有真正的交易日才添加数据
-                if is_trade_day and is_trading_date(today):
-                    realtime = get_etf_realtime_price()
-                    if realtime and realtime.get('price', 0) > 0:
-                        # 验证返回的日期也应该是交易日
-                        returned_date_str = realtime.get('date', '')
-                        if returned_date_str:
-                            try:
-                                returned_date = pd.to_datetime(returned_date_str).date()
-                                # 检查返回的日期是否有效（不应该是周末）
-                                if returned_date.weekday() >= 5:
-                                    print(f"⚠️ 警告：API返回的日期{returned_date}是周末，忽略此数据")
-                                    pass
-                                else:
-                                    today_row = {
-                                        '日期': pd.Timestamp(today),
-                                        '开盘': realtime.get('open', realtime['price']),
-                                        '最高': realtime.get('high', realtime['price']),
-                                        '最低': realtime.get('low', realtime['price']),
-                                        '收盘': realtime['price'],
-                                        '成交量': realtime.get('volume', 0)
-                                    }
-                                    df = pd.concat([df, pd.DataFrame([today_row])], ignore_index=True)
-                                    df = df.sort_values('日期').reset_index(drop=True)
-                                    print(f"已添加今日实时数据: {realtime['price']}")
-                            except:
-                                pass
-                        else:
-                            today_row = {
-                                '日期': pd.Timestamp(today),
-                                '开盘': realtime.get('open', realtime['price']),
-                                '最高': realtime.get('high', realtime['price']),
-                                '最低': realtime.get('low', realtime['price']),
-                                '收盘': realtime['price'],
-                                '成交量': realtime.get('volume', 0)
-                            }
-                            df = pd.concat([df, pd.DataFrame([today_row])], ignore_index=True)
-                            df = df.sort_values('日期').reset_index(drop=True)
-                            print(f"已添加今日实时数据: {realtime['price']}")
+            df, _, merge_msg = _merge_today_realtime_row(df, refresh_existing=True)
+            if merge_msg:
+                print(merge_msg)
 
             df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
@@ -583,7 +549,7 @@ def check_data_status():
     df['日期'] = pd.to_datetime(df['日期'])
 
     latest_date = df['日期'].max()
-    today = datetime.now().date()
+    today = get_market_now().date()
     days_behind = (today - latest_date.date()).days
 
     return {

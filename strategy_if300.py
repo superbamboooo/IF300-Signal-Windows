@@ -35,6 +35,9 @@ else:  # Linux
     plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'Noto Sans CJK SC', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
+# 导入统一的路径管理模块
+from path_manager import get_data_path
+
 # ==================== 策略参数（与V10.14一致）====================
 LONG_WEEKDAYS = [2, 3]  # 周三、周四
 LONG_MA_MIN = 0.99
@@ -57,18 +60,6 @@ SHORT_B_HOLD_DAYS = 5
 SHORT_B_STOP_LOSS = 0.02
 
 WEEKDAY_NAMES = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-
-
-def get_data_path():
-    """获取数据目录路径"""
-    if getattr(sys, 'frozen', False):
-        base_path = os.path.dirname(sys.executable)
-    else:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    data_path = os.path.join(os.path.dirname(base_path), 'data')
-    if not os.path.exists(data_path):
-        data_path = os.path.join(base_path, 'data')
-    return data_path
 
 
 def get_delivery_dates(start_year=2015, end_year=2030):
@@ -240,7 +231,7 @@ class IF300StrategyFrame:
 
         ttk.Label(long_range_frame, text="做多:", font=('微软雅黑', 15, 'bold')).pack(side=tk.LEFT)
         self.long_price_range_var = tk.StringVar(value="-- ~ --")
-        ttk.Label(long_range_frame, textvariable=self.long_price_range_var, font=('微软雅黑', 18, 'bold'), foreground='#006400').pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(long_range_frame, textvariable=self.long_price_range_var, font=('微软雅黑', 18, 'bold'), foreground='black').pack(side=tk.LEFT, padx=(5, 0))
 
         short_range_frame = ttk.Frame(price_range_cols)
         short_range_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
@@ -422,22 +413,22 @@ class IF300StrategyFrame:
         long_weekday_ok = weekday in LONG_WEEKDAYS
         weekday_text = f"星期: {WEEKDAY_NAMES[weekday]} (需要周三/周四)"
         self.long_weekday_var.set(weekday_text)
-        self.long_weekday_label.configure(foreground='green' if long_weekday_ok else 'red')
+        self.long_weekday_label.configure(foreground='black' if long_weekday_ok else 'red')
 
         long_ma_ok = LONG_MA_MIN <= ratio <= LONG_MA_MAX
         ma_text = f"MA比率: {ratio:.4f} (需要{LONG_MA_MIN}~{LONG_MA_MAX})"
         self.long_ma_var.set(ma_text)
-        self.long_ma_label.configure(foreground='green' if long_ma_ok else 'red')
+        self.long_ma_label.configure(foreground='black' if long_ma_ok else 'red')
 
         long_delivery_ok = not (is_delivery_week and weekday == 3)
         delivery_text = f"交割周周四: {'是(不可开仓)' if not long_delivery_ok else '否'}"
         self.long_delivery_var.set(delivery_text)
-        self.long_delivery_label.configure(foreground='green' if long_delivery_ok else 'red')
+        self.long_delivery_label.configure(foreground='black' if long_delivery_ok else 'red')
 
         long_signal = long_weekday_ok and long_ma_ok and long_delivery_ok
         if long_signal:
             self.long_result_var.set("✓ 满足做多条件")
-            self.long_result_label.configure(foreground='green')
+            self.long_result_label.configure(foreground='black')
         else:
             self.long_result_var.set("✗ 不满足做多条件")
             self.long_result_label.configure(foreground='gray')
@@ -455,14 +446,14 @@ class IF300StrategyFrame:
             ma_text = f"MA比率: {ratio:.4f} (需要{SHORT_A_MA_MIN}~{SHORT_A_MA_MAX})"
 
         self.short_weekday_var.set(weekday_text)
-        self.short_weekday_label.configure(foreground='green' if short_weekday_ok else 'red')
+        self.short_weekday_label.configure(foreground='black' if short_weekday_ok else 'red')
 
         month_text = f"月份: {month}月 ({'12月策略B' if month == 12 else '非12月策略A'})"
         self.short_month_var.set(month_text)
         self.short_month_label.configure(foreground='blue')
 
         self.short_ma_var.set(ma_text)
-        self.short_ma_label.configure(foreground='green' if short_ma_ok else 'red')
+        self.short_ma_label.configure(foreground='black' if short_ma_ok else 'red')
 
         short_signal = short_weekday_ok and short_ma_ok
         if short_signal:
@@ -731,20 +722,26 @@ class IF300StrategyFrame:
     def start_auto_refresh(self):
         """启动自动刷新"""
         try:
-            from data_updater import is_trading_time, get_realtime_price
+            from data_updater import is_trading_time, get_market_now
 
             is_trading_day, is_trading_hours, _ = is_trading_time()
+            market_now = get_market_now()
+            current_minutes = market_now.hour * 60 + market_now.minute
+            market_open_minutes = 9 * 60 + 30
 
             if is_trading_day and is_trading_hours and self.auto_refresh_enabled:
                 self.refresh_realtime()
                 self.auto_refresh_id = self.parent.after(60000, self.start_auto_refresh)
                 self.realtime_var.set("自动刷新中...")
-                self.realtime_label.configure(foreground='green')
+                self.realtime_label.configure(foreground='black')
             elif is_trading_day and not is_trading_hours:
-                now = datetime.now()
-                if now.hour < 9 or (now.hour == 9 and now.minute < 30):
+                # 交易日但非连续竞价时，若已开盘过（午休/收盘后），仍先抓一次当日实时行情
+                if current_minutes >= market_open_minutes:
+                    self.refresh_realtime()
+
+                if market_now.hour < 9 or (market_now.hour == 9 and market_now.minute < 30):
                     self.realtime_var.set("盘前等待")
-                elif now.hour >= 15:
+                elif market_now.hour >= 15:
                     self.realtime_var.set("已收盘")
                 else:
                     self.realtime_var.set("午休")
@@ -770,7 +767,7 @@ class IF300StrategyFrame:
                 source = realtime.get('source', '')
 
                 self.realtime_var.set(f"{price:.2f} ({time_str}) [{source}]")
-                self.realtime_label.configure(foreground='green')
+                self.realtime_label.configure(foreground='black')
 
                 now = datetime.now().strftime('%H:%M:%S')
                 self.refresh_time_var.set(f"数据更新: {now}")
@@ -788,7 +785,11 @@ class IF300StrategyFrame:
         if self.df is None or len(self.df) == 0 or self.realtime_price is None:
             return
 
-        today = datetime.now()
+        realtime_date = self.realtime_price.get('date')
+        try:
+            today = pd.to_datetime(realtime_date) if realtime_date else datetime.now()
+        except Exception:
+            today = datetime.now()
         weekday = today.weekday()
         month = today.month
 
@@ -860,7 +861,7 @@ IF300 V10.14 - 综合最优版本（宽止损）
 采用宽止损策略，减少被洗出次数，获取更高的年均收益和累计收益。
 
 【历史表现】(2018-2025)
-- 平均年收益率: 135.8%
+- 平均年收益率: +135.8%
 - 最大回撤: -27.8%
 - 收益回撤比: 4.89
 - 8年累计净值: 483.5倍
@@ -871,7 +872,7 @@ IF300 V10.14 - 综合最优版本（宽止损）
 - 开仓日: 周三、周四（交割周周四除外）
 - MA60比率范围: 99% ~ 110%
 - 持仓天数: 3个交易日
-- 止损: 2.0%
+- 止损: -2.0%
 
 ================================================================================
 【做空策略A】（非12月）
@@ -879,7 +880,7 @@ IF300 V10.14 - 综合最优版本（宽止损）
 - 开仓日: 周一
 - MA60比率范围: 98% ~ 110%
 - 持仓天数: 4个交易日
-- 止损: 1.5%
+- 止损: -1.5%
 
 ================================================================================
 【做空策略B】（仅12月）
@@ -887,7 +888,7 @@ IF300 V10.14 - 综合最优版本（宽止损）
 - 开仓日: 周五
 - MA60比率范围: ≤100%
 - 持仓天数: 5个交易日
-- 止损: 2.0%
+- 止损: -2.0%
 ================================================================================
 """
         text.insert(tk.END, strategy_text)

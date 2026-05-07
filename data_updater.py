@@ -16,11 +16,21 @@ import sys
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from path_manager import get_data_path
+
+
+MARKET_TZ = ZoneInfo('Asia/Shanghai')
+
+
+def get_market_now():
+    """获取中国市场当前时间（上海时区）。"""
+    return datetime.now(MARKET_TZ)
 
 
 def _get_current_quarterly_contract():
     """获取当前季月合约代码"""
-    now = datetime.now()
+    now = get_market_now()
     year = now.year
     month = now.month
     day = now.day
@@ -67,7 +77,7 @@ def _get_realtime_sina():
         if len(data) < 20:
             return None
 
-        now = datetime.now()
+        now = get_market_now()
 
         # 获取日期，但不使用当前日期作为回退
         # 如果API没有返回日期，返回None而不是用当前日期
@@ -118,7 +128,7 @@ def _get_realtime_eastmoney():
             items = result['data']['diff']
             if items:
                 d = items[0] if isinstance(items, list) else items
-                now = datetime.now()
+                now = get_market_now()
                 return {
                     'open': d.get('f17', 0),
                     'high': d.get('f15', 0),
@@ -146,7 +156,7 @@ def _get_realtime_hexun():
         url = 'http://webftcn.hermes.hexun.com/shf/kline'
         params = {
             'code': contract,
-            'start': datetime.now().strftime('%Y%m%d') + '000000',
+            'start': get_market_now().strftime('%Y%m%d') + '000000',
             'number': '1',
             'type': '5'
         }
@@ -155,7 +165,7 @@ def _get_realtime_hexun():
 
         if result and result.get('Data') and len(result['Data']) > 0:
             d = result['Data'][0]
-            now = datetime.now()
+            now = get_market_now()
             return {
                 'open': d[1] / 100 if d[1] else 0,
                 'high': d[2] / 100 if d[2] else 0,
@@ -347,7 +357,7 @@ def is_trading_time():
     - 下午：13:00 - 15:00
     返回: (is_trading_day, is_trading_hours, time_hint)
     """
-    now = datetime.now()
+    now = get_market_now()
     today = now.date()
     weekday = now.weekday()  # 0=周一, 6=周日
     hour = now.hour
@@ -384,75 +394,8 @@ def is_trading_time():
     return True, False, ""
 
 
-def get_data_path():
-    """
-    获取数据目录路径
-    支持多种部署方式：
-    1. 开发环境 (sys.frozen=False)
-    2. Windows EXE (--onefile模式)
-    3. Mac .app
-    4. Linux 打包
-    """
-    # ========== 尝试1: 打包后的资源目录 (PyInstaller _internal) ==========
-    if getattr(sys, 'frozen', False):
-        # Windows EXE 或 Mac .app 打包环境
-        exe_dir = os.path.dirname(sys.executable)
-
-        # 检查多个可能的路径
-        possible_paths = [
-            # PyInstaller --onefile 模式：_internal 子目录
-            os.path.join(exe_dir, '_internal', 'data'),
-            # PyInstaller --onedir 模式：同级data目录
-            os.path.join(exe_dir, 'data'),
-            # 上级目录的data
-            os.path.join(os.path.dirname(exe_dir), 'data'),
-            # 当前目录的data
-            os.path.join(os.getcwd(), 'data'),
-        ]
-
-        for path in possible_paths:
-            if os.path.exists(path):
-                print(f"[数据路径] 找到: {path}")
-                return path
-
-        # 如果都没找到，在当前目录创建data目录
-        data_path = os.path.join(exe_dir, 'data')
-        print(f"[数据路径] 未找到现有data目录，将在 {data_path} 创建")
-
-    # ========== 尝试2: 开发环境 ==========
-    else:
-        # Python脚本直接运行
-        base_path = os.path.dirname(os.path.abspath(__file__))
-
-        # 先尝试当前目录的data
-        data_path = os.path.join(base_path, 'data')
-        if os.path.exists(data_path):
-            return data_path
-
-        # 再尝试上级目录的data（适配不同的项目结构）
-        parent_data_path = os.path.join(os.path.dirname(base_path), 'data')
-        if os.path.exists(parent_data_path):
-            return parent_data_path
-
-        # 都没有就在当前目录创建
-        data_path = os.path.join(base_path, 'data')
-
-    # ========== 创建目录 ==========
-    if not os.path.exists(data_path):
-        try:
-            os.makedirs(data_path, exist_ok=True)
-            print(f"[数据路径] 创建目录成功: {data_path}")
-        except Exception as e:
-            print(f"[错误] 无法创建data目录: {data_path}")
-            print(f"       原因: {str(e)}")
-            print(f"       当前工作目录: {os.getcwd()}")
-            # 回退到临时目录
-            import tempfile
-            data_path = os.path.join(tempfile.gettempdir(), 'if300_data')
-            os.makedirs(data_path, exist_ok=True)
-            print(f"[警告] 使用临时目录: {data_path}")
-
-    return data_path
+# 注：get_data_path() 函数已统一到 path_manager 模块
+# 直接使用 from path_manager import get_data_path
 
 
 def get_quarterly_contracts(start_year=2017, end_year=2030):
@@ -479,7 +422,7 @@ def get_delivery_date(year, month):
 
 def get_current_quarterly_contract():
     """获取当前应该使用的季月合约代码"""
-    today = datetime.now()
+    today = get_market_now()
     year = today.year
     month = today.month
 
@@ -504,41 +447,62 @@ def update_quarterly_data_akshare():
     """
     try:
         import akshare as ak
+        from datetime import datetime
 
-        print("正在从akshare获取IF季月合约数据...")
+        print("  [akshare] 正在从akshare获取IF季月合约数据...")
 
+        # 获取数据路径
         data_path = get_data_path()
         file_path = os.path.join(data_path, 'IF_主连_季月合约连接_day.csv')
+        print(f"  [DEBUG] 数据文件路径: {file_path}")
+        print(f"  [DEBUG] 数据目录可写: {os.access(data_path, os.W_OK)}")
 
         # 读取现有数据
+        print("  [akshare] 读取现有数据...")
         if os.path.exists(file_path):
-            df_old = pd.read_csv(file_path)
-            df_old['日期'] = pd.to_datetime(df_old['日期'])
+            try:
+                df_old = pd.read_csv(file_path)
+                df_old['日期'] = pd.to_datetime(df_old['日期'])
 
-            # 标准化列：确保价格数据在正确的列中
-            for old_col, new_col in [('开盘价', '开盘'), ('最高价', '最高'), ('最低价', '最低'), ('收盘价', '收盘')]:
-                if old_col in df_old.columns and new_col in df_old.columns:
-                    mask = df_old[new_col].isna()
-                    if mask.any():
-                        df_old.loc[mask, new_col] = df_old.loc[mask, old_col]
+                # 标准化列：确保价格数据在正确的列中
+                for old_col, new_col in [('开盘价', '开盘'), ('最高价', '最高'), ('最低价', '最低'), ('收盘价', '收盘')]:
+                    if old_col in df_old.columns and new_col in df_old.columns:
+                        mask = df_old[new_col].isna()
+                        if mask.any():
+                            df_old.loc[mask, new_col] = df_old.loc[mask, old_col]
 
-            last_date = df_old['日期'].max()
-            print(f"现有数据最新日期: {last_date.strftime('%Y-%m-%d')}")
+                last_date = df_old['日期'].max()
+                print(f"  [DEBUG] 现有数据行数: {len(df_old)}")
+                print(f"  [DEBUG] 现有数据最新日期: {last_date.strftime('%Y-%m-%d')}")
+            except Exception as e:
+                print(f"  [WARNING] 读取现有数据失败: {e}")
+                df_old = None
+                last_date = datetime(2017, 1, 1)
         else:
+            print(f"  [DEBUG] CSV文件不存在，将创建新文件")
             df_old = None
             last_date = datetime(2017, 1, 1)
 
         # 获取当前季月合约
+        print("  [akshare] 确定当前季月合约...")
         current_contract = get_current_quarterly_contract()
-        print(f"当前季月合约: {current_contract}")
+        print(f"  [DEBUG] 当前季月合约: {current_contract}")
 
         # 获取该合约的数据
+        print(f"  [akshare] 从 akshare 获取 {current_contract} 的日线数据...")
         try:
             # 使用中金所数据
             symbol = current_contract
+            print(f"  [DEBUG] 调用 ak.futures_zh_daily_sina(symbol='{symbol}')...")
             df_new = ak.futures_zh_daily_sina(symbol=symbol)
+            print(f"  [DEBUG] akshare 返回数据: {type(df_new)}")
 
             if df_new is not None and len(df_new) > 0:
+                print(f"  [DEBUG] 获取到 {len(df_new)} 条原始数据")
+                print(f"  [DEBUG] 数据列: {list(df_new.columns)}")
+
+                # 重命名列
+                print(f"  [akshare] 重命名数据列...")
                 df_new = df_new.rename(columns={
                     'date': '日期',
                     'open': '开盘',
@@ -550,15 +514,20 @@ def update_quarterly_data_akshare():
                 })
                 df_new['日期'] = pd.to_datetime(df_new['日期'])
                 df_new['合约'] = current_contract
+                print(f"  [DEBUG] 重命名后的列: {list(df_new.columns)}")
 
                 # 只保留比现有数据更新的记录
+                print(f"  [akshare] 过滤新数据...")
                 if df_old is not None:
+                    before_filter = len(df_new)
                     df_new = df_new[df_new['日期'] > last_date]
+                    print(f"  [DEBUG] 过滤前 {before_filter} 条 → 过滤后 {len(df_new)} 条")
 
                 if len(df_new) > 0:
-                    print(f"获取到 {len(df_new)} 条新数据")
+                    print(f"  [akshare] 获取到 {len(df_new)} 条新数据")
 
                     # 合并数据
+                    print(f"  [akshare] 合并数据...")
                     required_cols = ['日期', '开盘', '最高', '最低', '收盘', '成交量', '持仓量', '合约']
 
                     if df_old is not None:
@@ -566,37 +535,63 @@ def update_quarterly_data_akshare():
                         if '合约' not in df_old.columns:
                             df_old['合约'] = ''
                         df_old = df_old[[c for c in required_cols if c in df_old.columns]]
+                        print(f"  [DEBUG] 旧数据行数: {len(df_old)}")
 
                     df_new = df_new[[c for c in required_cols if c in df_new.columns]]
 
                     if df_old is not None:
                         df = pd.concat([df_old, df_new], ignore_index=True)
+                        print(f"  [DEBUG] 合并后行数: {len(df)}")
                     else:
                         df = df_new
+                        print(f"  [DEBUG] 使用新数据（无旧数据）: {len(df)} 行")
 
+                    # 去重和排序
+                    print(f"  [akshare] 去重和排序...")
                     df = df.drop_duplicates(subset=['日期'], keep='last')
                     df = df.sort_values('日期').reset_index(drop=True)
+                    print(f"  [DEBUG] 最终数据行数: {len(df)}")
 
+                    # 保存文件
+                    print(f"  [akshare] 保存数据到 {file_path}...")
                     df.to_csv(file_path, index=False)
 
-                    return f"数据更新成功，共{len(df)}条记录，最新日期: {df['日期'].max().strftime('%Y-%m-%d')}"
+                    # 验证保存
+                    if os.path.exists(file_path):
+                        saved_size = os.path.getsize(file_path)
+                        print(f"  [DEBUG] 文件保存成功，大小: {saved_size} 字节")
+
+                        # 验证读取
+                        df_verify = pd.read_csv(file_path)
+                        print(f"  [DEBUG] 验证读取: {len(df_verify)} 行")
+                        latest_date = pd.to_datetime(df_verify['日期']).max()
+                        print(f"  [DEBUG] 最新日期: {latest_date.strftime('%Y-%m-%d')}")
+                    else:
+                        raise Exception("文件保存失败：文件不存在")
+
+                    return f"✓ 数据更新成功\n合约: {current_contract}\n共 {len(df)} 条记录\n最新日期: {df['日期'].max().strftime('%Y-%m-%d')}"
                 else:
                     # 检查是否在交易时段，给出更友好的提示
+                    print(f"  [akshare] 无新数据（已是最新）")
                     is_trading_day, is_trading_hours, time_hint = is_trading_time()
-                    today = datetime.now().date()
+                    today = get_market_now().date()
 
                     if is_trading_day and last_date.date() < today:
                         # 今天是交易日但数据还没更新到今天
+                        print(f"  [DEBUG] 今天是交易日但数据未更新")
                         return f"数据最新日期: {last_date.strftime('%Y-%m-%d')}\n{time_hint}"
                     else:
+                        print(f"  [DEBUG] 数据已是最新")
                         return f"数据已是最新，最新日期: {last_date.strftime('%Y-%m-%d')}"
             else:
-                return "未获取到新数据"
+                print(f"  [ERROR] akshare 返回空数据: {df_new}")
+                raise Exception("akshare 返回空数据，可能是网络问题或合约代码错误")
 
         except Exception as e:
-            print(f"获取合约 {current_contract} 数据失败: {e}")
-            # 尝试使用主连数据作为备选
-            return update_from_main_contract()
+            error_msg = str(e)
+            print(f"  [ERROR] 获取合约 {current_contract} 数据失败")
+            print(f"  [ERROR] 错误详情: {error_msg[:200]}")
+            raise Exception(f"akshare 获取数据失败: {error_msg[:300]}")
 
     except ImportError:
         raise Exception("请先安装akshare: pip install akshare")
@@ -645,7 +640,7 @@ def update_from_main_contract():
             return f"IF{(year + 1) % 100:02d}03"
 
         # 如果是交易日，获取当前季月合约的实时数据
-        today = datetime.now().date()
+        today = get_market_now().date()
         latest_date = df['日期'].max().date()
         current_contract = _get_current_quarterly_contract()
 
@@ -795,18 +790,203 @@ def update_from_main_contract():
 def update_if_data():
     """
     自动更新IF季月合约数据
-    优先使用主连推断方法（支持多源验证），akshare作为备选
+    优先级: akshare → 东方财富 → 主连推断
+    （所有环境统一使用这个优先级，避免复杂的条件判断）
     """
-    # 优先使用主连推断方法（支持多源数据验证）
+    from datetime import datetime
+
+    start_time = datetime.now()
+    print("\n" + "="*70)
+    print(f"[IF300] 数据更新开始 - {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print("="*70)
+
     try:
-        return update_from_main_contract()
-    except Exception as e:
-        print(f"主连推断方法失败: {e}，尝试akshare")
-        # 备选：尝试akshare
+        # 获取数据路径
+        data_path = get_data_path()
+        print(f"[DEBUG] 数据路径: {data_path}")
+
+        # 检查文件是否存在
+        file_path = os.path.join(data_path, 'IF_主连_季月合约连接_day.csv')
+        file_exists = os.path.exists(file_path)
+        print(f"[DEBUG] CSV文件存在: {file_exists}")
+        if file_exists:
+            file_size = os.path.getsize(file_path)
+            print(f"[DEBUG] CSV文件大小: {file_size} 字节")
+
+        # 获取当前合约
+        current_contract = _get_current_quarterly_contract()
+        print(f"[DEBUG] 当前季月合约: {current_contract}")
+
+        # 检查环境
+        env_type = "Windows EXE" if getattr(sys, 'frozen', False) else "开发环境"
+        print(f"[DEBUG] 运行环境: {env_type}")
+
+        print(f"\n[IF300] 优先级: akshare → 东方财富 → 主连推断")
+
+        # 1️⃣ 优先使用 akshare（最稳定，获取完整日线数据）
+        print("\n" + "-"*70)
+        print("[Step 1/3] 尝试 akshare 数据源...")
+        print("-"*70)
         try:
-            return update_quarterly_data_akshare()
-        except Exception as e2:
-            raise Exception(f"数据更新失败: {str(e2)}")
+            result = update_quarterly_data_akshare()
+            elapsed = (datetime.now() - start_time).total_seconds()
+            print(f"\n✅ akshare 更新成功！(耗时: {elapsed:.1f}秒)")
+            print(f"[Result] {result}")
+            print("="*70 + "\n")
+            return result
+        except Exception as e:
+            error_msg = str(e)
+            print(f"⚠️ akshare 失败")
+            print(f"[Error] {error_msg[:200]}")
+
+        # 2️⃣ 备选1: 东方财富 API（获取完整日线）
+        print("\n" + "-"*70)
+        print("[Step 2/3] 尝试东方财富 API...")
+        print("-"*70)
+        try:
+            result = update_quarterly_from_eastmoney()
+            elapsed = (datetime.now() - start_time).total_seconds()
+            print(f"\n✅ 东方财富 API 更新成功！(耗时: {elapsed:.1f}秒)")
+            print(f"[Result] {result}")
+            print("="*70 + "\n")
+            return result
+        except Exception as e:
+            error_msg = str(e)
+            print(f"⚠️ 东方财富 API 失败")
+            print(f"[Error] {error_msg[:200]}")
+
+        # 3️⃣ 备选2: 主连推断方法（只在前两个失败时使用）
+        print("\n" + "-"*70)
+        print("[Step 3/3] 尝试主连推断方法（备选）...")
+        print("-"*70)
+        try:
+            result = update_from_main_contract()
+            elapsed = (datetime.now() - start_time).total_seconds()
+            print(f"\n✅ 主连推断方法更新成功！(耗时: {elapsed:.1f}秒)")
+            print(f"[Result] {result}")
+            print("="*70 + "\n")
+            return result
+        except Exception as e:
+            error_msg = str(e)
+            print(f"❌ 主连推断方法也失败")
+            print(f"[Error] {error_msg[:200]}")
+            elapsed = (datetime.now() - start_time).total_seconds()
+            print(f"\n❌ 数据更新失败！(耗时: {elapsed:.1f}秒)")
+            print("="*70)
+            raise Exception(f"数据更新失败（所有数据源均无法获取完整日线数据）\n错误信息: {error_msg[:300]}")
+
+    except Exception as e:
+        print(f"\n[FATAL] 未预期的错误: {str(e)[:200]}")
+        print("="*70 + "\n")
+        raise
+
+
+def update_quarterly_from_eastmoney():
+    """
+    从东方财富获取 IF 季月合约日线数据（稳定方案）
+    不依赖多个接口，相对可靠，适合 Windows EXE 环境
+    """
+    try:
+        print("[IF300-EMY] 正在从东方财富获取 IF 季月合约数据...")
+
+        data_path = get_data_path()
+        file_path = os.path.join(data_path, 'IF_主连_季月合约连接_day.csv')
+
+        current_contract = _get_current_quarterly_contract()
+        print(f"[IF300-EMY] 当前季月合约: {current_contract}")
+
+        # 东方财富期货日线 API
+        url = 'https://push2his.eastmoney.com/api/qt/stock/kline/get'
+        params = {
+            'secid': f'8.{current_contract}',
+            'fields1': 'f1,f2,f3,f4,f5,f6',
+            'fields2': 'f51,f52,f53,f54,f55,f56,f57',
+            'klt': '101',      # 日线
+            'fqt': '0',        # 不复权
+            'beg': '20150101',
+            'end': '20500101',
+            'ut': 'fa5fd1943c7b386f172d6893dbfba10b',
+            'smplmt': '5000',
+            'lmt': '5000'
+        }
+
+        print(f"[IF300-EMY] 请求 URL: {url}")
+        resp = requests.get(url, params=params, timeout=30)
+        result = resp.json()
+
+        if result.get('data') and result['data'].get('klines'):
+            klines = result['data']['klines']
+            print(f"[IF300-EMY] 获取到 {len(klines)} 条 K 线数据")
+
+            rows = []
+            for line in klines:
+                try:
+                    parts = line.split(',')
+                    if len(parts) >= 6:
+                        rows.append({
+                            '日期': parts[0],
+                            '开盘': float(parts[1]),
+                            '收盘': float(parts[2]),
+                            '最高': float(parts[3]),
+                            '最低': float(parts[4]),
+                            '成交量': int(float(parts[5])),
+                            '持仓量': 0,
+                            '合约': current_contract
+                        })
+                except Exception as e:
+                    print(f"[IF300-EMY] 警告：解析数据行失败: {e}")
+                    continue
+
+            if not rows:
+                return f"✗ 未获取到有效数据，请检查合约代码: {current_contract}"
+
+            df = pd.DataFrame(rows)
+            df['日期'] = pd.to_datetime(df['日期'])
+
+            # 与现有数据合并
+            if os.path.exists(file_path):
+                try:
+                    print(f"[IF300-EMY] 读取现有数据文件...")
+                    df_old = pd.read_csv(file_path, encoding='utf-8-sig')
+                    df_old['日期'] = pd.to_datetime(df_old['日期'])
+
+                    required_cols = ['日期', '开盘', '最高', '最低', '收盘', '成交量', '持仓量', '合约']
+                    df_old = df_old[[c for c in required_cols if c in df_old.columns]]
+
+                    print(f"[IF300-EMY] 现有数据: {len(df_old)} 行，新数据: {len(df)} 行")
+                    df = pd.concat([df_old, df], ignore_index=True)
+                    df = df.drop_duplicates(subset=['日期'], keep='last')
+                except Exception as e:
+                    print(f"[IF300-EMY] 警告：合并失败，将使用新数据: {e}")
+
+            df = df.sort_values('日期').reset_index(drop=True)
+
+            # ✓ 保存文件
+            print(f"[IF300-EMY] 保存数据到: {file_path}")
+            df.to_csv(file_path, index=False, encoding='utf-8-sig')
+
+            # ✓ 验证保存
+            if os.path.exists(file_path):
+                file_size = os.path.getsize(file_path)
+                df_verify = pd.read_csv(file_path)
+                print(f"[IF300-EMY] ✓ 验证成功: 文件大小 {file_size} bytes, 数据行数 {len(df_verify)}")
+
+                return (f"✓ 数据更新成功 (东方财富)\n"
+                        f"合约: {current_contract}\n"
+                        f"共 {len(df)} 条记录\n"
+                        f"日期范围: {df['日期'].min().strftime('%Y-%m-%d')} ~ {df['日期'].max().strftime('%Y-%m-%d')}")
+            else:
+                raise Exception(f"文件保存失败: {file_path}")
+
+        else:
+            error_msg = result.get('message', '未知错误')
+            return f"✗ 未从东方财富获取到数据: {error_msg}"
+
+    except Exception as e:
+        print(f"[IF300-EMY] 错误: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise Exception(f"东方财富 API 更新失败: {str(e)}")
 
 
 def check_data_status():
@@ -824,7 +1004,7 @@ def check_data_status():
     df['日期'] = pd.to_datetime(df['日期'])
 
     latest_date = df['日期'].max()
-    today = datetime.now().date()
+    today = get_market_now().date()
     days_behind = (today - latest_date.date()).days
 
     # 获取最新合约

@@ -94,6 +94,23 @@ class WeekendStrategyFrame:
 
     def create_widgets(self):
         """创建界面组件"""
+        def make_signal_label(parent, textvariable, font, pady=1):
+            label = ttk.Label(
+                parent,
+                textvariable=textvariable,
+                font=font,
+                justify=tk.LEFT,
+                anchor='w'
+            )
+            label.pack(anchor=tk.W, fill=tk.X, pady=pady)
+
+            def update_wrap(event, lbl=label):
+                wrap = max(event.width - 24, 120)
+                lbl.configure(wraplength=wrap)
+
+            parent.bind("<Configure>", update_wrap, add="+")
+            return label
+
         # 主框架
         main_frame = ttk.Frame(self.parent, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -154,82 +171,69 @@ class WeekendStrategyFrame:
 
         signal_cols = ttk.Frame(signal_frame)
         signal_cols.pack(fill=tk.X)
+        signal_cols.columnconfigure(0, weight=1, uniform='signal_cols')
+        signal_cols.columnconfigure(1, weight=1, uniform='signal_cols')
+        signal_cols.columnconfigure(2, weight=1, uniform='signal_cols')
 
-        # 左列：周四买入条件
-        left_frame = ttk.LabelFrame(signal_cols, text="周四买入条件", padding="5")
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
-
-        self.thu_weekday_var = tk.StringVar(value="星期: --")
-        self.thu_weekday_label = ttk.Label(left_frame, textvariable=self.thu_weekday_var, font=('微软雅黑', 15))
-        self.thu_weekday_label.pack(anchor=tk.W)
-
-        self.thu_month_var = tk.StringVar(value="月份: --")
-        self.thu_month_label = ttk.Label(left_frame, textvariable=self.thu_month_var, font=('微软雅黑', 15))
-        self.thu_month_label.pack(anchor=tk.W)
-
-        self.thu_ma_var = tk.StringVar(value="MA条件: --")
-        self.thu_ma_label = ttk.Label(left_frame, textvariable=self.thu_ma_var, font=('微软雅黑', 15))
-        self.thu_ma_label.pack(anchor=tk.W)
-
-        self.thu_decline_var = tk.StringVar(value="周跌幅: --")
-        self.thu_decline_label = ttk.Label(left_frame, textvariable=self.thu_decline_var, font=('微软雅黑', 15))
-        self.thu_decline_label.pack(anchor=tk.W)
-
-        self.thu_result_var = tk.StringVar(value="")
-        self.thu_result_label = ttk.Label(left_frame, textvariable=self.thu_result_var, font=('微软雅黑', 18, 'bold'))
-        self.thu_result_label.pack(anchor=tk.W, pady=(5, 0))
-
-        # 中列：周五买入条件
-        mid_frame = ttk.LabelFrame(signal_cols, text="周五买入条件", padding="5")
-        mid_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
-
-        self.fri_weekday_var = tk.StringVar(value="星期: --")
-        self.fri_weekday_label = ttk.Label(mid_frame, textvariable=self.fri_weekday_var, font=('微软雅黑', 15))
-        self.fri_weekday_label.pack(anchor=tk.W)
-
-        self.fri_month_var = tk.StringVar(value="月份: --")
-        self.fri_month_label = ttk.Label(mid_frame, textvariable=self.fri_month_var, font=('微软雅黑', 15))
-        self.fri_month_label.pack(anchor=tk.W)
-
-        self.fri_ma_var = tk.StringVar(value="MA条件: --")
-        self.fri_ma_label = ttk.Label(mid_frame, textvariable=self.fri_ma_var, font=('微软雅黑', 15))
-        self.fri_ma_label.pack(anchor=tk.W)
-
-        self.fri_decline_var = tk.StringVar(value="周跌幅: --")
-        self.fri_decline_label = ttk.Label(mid_frame, textvariable=self.fri_decline_var, font=('微软雅黑', 15))
-        self.fri_decline_label.pack(anchor=tk.W)
-
-        self.fri_result_var = tk.StringVar(value="")
-        self.fri_result_label = ttk.Label(mid_frame, textvariable=self.fri_result_var, font=('微软雅黑', 18, 'bold'))
-        self.fri_result_label.pack(anchor=tk.W, pady=(5, 0))
-
-        # 右列：策略1两段式买入
-        right_frame = ttk.LabelFrame(signal_cols, text="策略1 两段式买入 (V10.02)", padding="5")
-        right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        # 左列：策略1两段式买入（最高优先级）
+        left_frame = ttk.LabelFrame(signal_cols, text="策略1 两段式买入 (V10.02)", padding="5")
+        left_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 5))
 
         self.sup_month_var = tk.StringVar(value="月份: --")
-        self.sup_month_label = ttk.Label(right_frame, textvariable=self.sup_month_var, font=('微软雅黑', 15))
-        self.sup_month_label.pack(anchor=tk.W)
+        self.sup_month_label = make_signal_label(left_frame, self.sup_month_var, ('微软雅黑', 15))
 
         self.sup_ma_var = tk.StringVar(value="MA条件: --")
-        self.sup_ma_label = ttk.Label(right_frame, textvariable=self.sup_ma_var, font=('微软雅黑', 15))
-        self.sup_ma_label.pack(anchor=tk.W)
+        self.sup_ma_label = make_signal_label(left_frame, self.sup_ma_var, ('微软雅黑', 15))
 
-        self.sup_ref_var = tk.StringVar(value="参考价/回撤线: --")
-        self.sup_ref_label = ttk.Label(right_frame, textvariable=self.sup_ref_var, font=('微软雅黑', 15))
-        self.sup_ref_label.pack(anchor=tk.W)
+        self.sup_ref_var = tk.StringVar(value="参考价/跌幅线: --")
+        self.sup_ref_label = make_signal_label(left_frame, self.sup_ref_var, ('微软雅黑', 15))
 
         self.sup_drop_var = tk.StringVar(value="触发状态: --")
-        self.sup_drop_label = ttk.Label(right_frame, textvariable=self.sup_drop_var, font=('微软雅黑', 15))
-        self.sup_drop_label.pack(anchor=tk.W)
+        self.sup_drop_label = make_signal_label(left_frame, self.sup_drop_var, ('微软雅黑', 15))
 
         self.sup_entry_var = tk.StringVar(value="策略1买点: --")
-        self.sup_entry_label = ttk.Label(right_frame, textvariable=self.sup_entry_var, font=('微软雅黑', 15))
-        self.sup_entry_label.pack(anchor=tk.W)
+        self.sup_entry_label = make_signal_label(left_frame, self.sup_entry_var, ('微软雅黑', 15))
 
         self.sup_result_var = tk.StringVar(value="")
-        self.sup_result_label = ttk.Label(right_frame, textvariable=self.sup_result_var, font=('微软雅黑', 18, 'bold'))
-        self.sup_result_label.pack(anchor=tk.W, pady=(5, 0))
+        self.sup_result_label = make_signal_label(left_frame, self.sup_result_var, ('微软雅黑', 18, 'bold'), pady=(5, 0))
+
+        # 中列：周四买入条件
+        mid_frame = ttk.LabelFrame(signal_cols, text="周四买入条件", padding="5")
+        mid_frame.grid(row=0, column=1, sticky='nsew', padx=5)
+
+        self.thu_weekday_var = tk.StringVar(value="星期: --")
+        self.thu_weekday_label = make_signal_label(mid_frame, self.thu_weekday_var, ('微软雅黑', 15))
+
+        self.thu_month_var = tk.StringVar(value="月份: --")
+        self.thu_month_label = make_signal_label(mid_frame, self.thu_month_var, ('微软雅黑', 15))
+
+        self.thu_ma_var = tk.StringVar(value="MA条件: --")
+        self.thu_ma_label = make_signal_label(mid_frame, self.thu_ma_var, ('微软雅黑', 15))
+
+        self.thu_decline_var = tk.StringVar(value="周涨跌幅: --")
+        self.thu_decline_label = make_signal_label(mid_frame, self.thu_decline_var, ('微软雅黑', 15))
+
+        self.thu_result_var = tk.StringVar(value="")
+        self.thu_result_label = make_signal_label(mid_frame, self.thu_result_var, ('微软雅黑', 18, 'bold'), pady=(5, 0))
+
+        # 右列：周五买入条件
+        right_frame = ttk.LabelFrame(signal_cols, text="周五买入条件", padding="5")
+        right_frame.grid(row=0, column=2, sticky='nsew', padx=(5, 0))
+
+        self.fri_weekday_var = tk.StringVar(value="星期: --")
+        self.fri_weekday_label = make_signal_label(right_frame, self.fri_weekday_var, ('微软雅黑', 15))
+
+        self.fri_month_var = tk.StringVar(value="月份: --")
+        self.fri_month_label = make_signal_label(right_frame, self.fri_month_var, ('微软雅黑', 15))
+
+        self.fri_ma_var = tk.StringVar(value="MA条件: --")
+        self.fri_ma_label = make_signal_label(right_frame, self.fri_ma_var, ('微软雅黑', 15))
+
+        self.fri_decline_var = tk.StringVar(value="周涨跌幅: --")
+        self.fri_decline_label = make_signal_label(right_frame, self.fri_decline_var, ('微软雅黑', 15))
+
+        self.fri_result_var = tk.StringVar(value="")
+        self.fri_result_label = make_signal_label(right_frame, self.fri_result_var, ('微软雅黑', 18, 'bold'), pady=(5, 0))
 
         # ===== 可开仓价格区间与卖点规则 =====
         price_range_frame = ttk.LabelFrame(main_frame, text="参考买卖规则", padding="10")
@@ -243,9 +247,9 @@ class WeekendStrategyFrame:
 
         ttk.Label(range_frame, text="买入区间:", font=('微软雅黑', 15, 'bold')).pack(side=tk.LEFT)
         self.buy_price_range_var = tk.StringVar(value="-- ~ --")
-        ttk.Label(range_frame, textvariable=self.buy_price_range_var, font=('微软雅黑', 18, 'bold'), foreground='#006400').pack(side=tk.LEFT, padx=(5, 30))
+        ttk.Label(range_frame, textvariable=self.buy_price_range_var, font=('微软雅黑', 18, 'bold'), foreground='black').pack(side=tk.LEFT, padx=(5, 30))
 
-        ttk.Label(range_frame, text="止损价:", font=('微软雅黑', 15, 'bold')).pack(side=tk.LEFT)
+        ttk.Label(range_frame, text="止损价(跌幅):", font=('微软雅黑', 15, 'bold')).pack(side=tk.LEFT)
         self.stop_loss_var = tk.StringVar(value="--")
         ttk.Label(range_frame, textvariable=self.stop_loss_var, font=('微软雅黑', 15, 'bold'), foreground='#8B0000').pack(side=tk.LEFT, padx=(5, 0))
 
@@ -284,6 +288,8 @@ class WeekendStrategyFrame:
         """加载K线数据"""
         self.status_var.set("正在加载数据...")
         try:
+            from weekend_data_updater import is_trading_time, get_market_now
+
             data_path = get_data_path()
             file_path = os.path.join(data_path, '159915_创业板ETF_day.csv')
 
@@ -319,8 +325,13 @@ class WeekendStrategyFrame:
             data_end = self.df['日期'].max().strftime('%Y-%m-%d')
             self.status_var.set(f"数据加载完成 | 数据范围: {data_start} ~ {data_end}")
 
-            now = datetime.now().strftime('%H:%M:%S')
+            now = get_market_now().strftime('%H:%M:%S')
             self.refresh_time_var.set(f"数据更新: {now}")
+
+            # 交易日优先抓一次实时行情，避免界面日期停留在上一根日线
+            is_trading_day, _, _ = is_trading_time()
+            if is_trading_day:
+                self.parent.after(200, self.refresh_realtime)
 
         except Exception as e:
             messagebox.showerror("错误", f"加载数据失败:\n{str(e)}")
@@ -494,41 +505,41 @@ class WeekendStrategyFrame:
         # ===== 周四买入条件 =====
         thu_weekday_ok = weekday == 3
         self.thu_weekday_var.set(f"星期: {WEEKDAY_NAMES[weekday]} (需要周四)")
-        self.thu_weekday_label.configure(foreground='green' if thu_weekday_ok else 'red')
+        self.thu_weekday_label.configure(foreground='black' if thu_weekday_ok else 'red')
 
         self.thu_month_var.set(f"月份: {month}月 ({'排除' if month in EXCLUDE_MONTHS else '可交易'})")
-        self.thu_month_label.configure(foreground='green' if month_ok else 'red')
+        self.thu_month_label.configure(foreground='black' if month_ok else 'red')
 
         self.thu_ma_var.set(f"{close_ma['text']}{mode_hint}")
-        self.thu_ma_label.configure(foreground='green' if close_ma['valid'] else 'red')
+        self.thu_ma_label.configure(foreground='black' if close_ma['valid'] else 'red')
 
         # 周跌幅条件
         if week_decline is not None:
             decline_pct = week_decline * 100
             if week_decline <= -0.06:
                 thu_subtype = "thursday_6plus"
-                thu_decline_text = f"周跌幅: {decline_pct:.2f}% (≥6%，下周四卖)"
+                thu_decline_text = f"周涨跌幅: {decline_pct:+.2f}% (<=-6.00%，下周四卖)"
             elif week_decline <= -0.04:
                 thu_subtype = "thursday_4_6"
-                thu_decline_text = f"周跌幅: {decline_pct:.2f}% (4%-6%，下周四卖)"
+                thu_decline_text = f"周涨跌幅: {decline_pct:+.2f}% (-6.00%~-4.00%，下周四卖)"
             elif week_decline <= -0.02:
                 thu_subtype = "thursday_2_4"
-                thu_decline_text = f"周跌幅: {decline_pct:.2f}% (2%-4%，下周二卖)"
+                thu_decline_text = f"周涨跌幅: {decline_pct:+.2f}% (-4.00%~-2.00%，下周二卖)"
             else:
                 thu_subtype = None
-                thu_decline_text = f"周跌幅: {decline_pct:.2f}% (未达2%)"
+                thu_decline_text = f"周涨跌幅: {decline_pct:+.2f}% (未达-2.00%)"
 
             self.thu_decline_var.set(thu_decline_text)
-            self.thu_decline_label.configure(foreground='green' if thu_subtype else 'red')
+            self.thu_decline_label.configure(foreground='black' if thu_subtype else 'red')
         else:
             thu_subtype = None
-            self.thu_decline_var.set("周跌幅: 无数据")
+            self.thu_decline_var.set("周涨跌幅: 无数据")
             self.thu_decline_label.configure(foreground='gray')
 
         thu_signal = thu_weekday_ok and month_ok and close_ma['valid'] and thu_subtype is not None
         if thu_signal:
             self.thu_result_var.set(f"✓ 满足周四买入：{thu_subtype}")
-            self.thu_result_label.configure(foreground='green')
+            self.thu_result_label.configure(foreground='black')
         else:
             self.thu_result_var.set("✗ 不满足")
             self.thu_result_label.configure(foreground='gray')
@@ -536,13 +547,13 @@ class WeekendStrategyFrame:
         # ===== 周五买入条件 =====
         fri_weekday_ok = weekday == 4
         self.fri_weekday_var.set(f"星期: {WEEKDAY_NAMES[weekday]} (需要周五)")
-        self.fri_weekday_label.configure(foreground='green' if fri_weekday_ok else 'red')
+        self.fri_weekday_label.configure(foreground='black' if fri_weekday_ok else 'red')
 
         self.fri_month_var.set(f"月份: {month}月 ({'排除' if month in EXCLUDE_MONTHS else '可交易'})")
-        self.fri_month_label.configure(foreground='green' if month_ok else 'red')
+        self.fri_month_label.configure(foreground='black' if month_ok else 'red')
 
         self.fri_ma_var.set(f"{close_ma['text']}{mode_hint}")
-        self.fri_ma_label.configure(foreground='green' if close_ma['valid'] else 'red')
+        self.fri_ma_label.configure(foreground='black' if close_ma['valid'] else 'red')
 
         day_change = None
         if previous_close and previous_close != 0:
@@ -551,35 +562,35 @@ class WeekendStrategyFrame:
         if week_decline is not None and day_change is not None:
             if week_decline < -0.03:
                 fri_subtype = "friday_week_down"
-                fri_text = f"周跌幅 {week_decline*100:.2f}% (下周四卖)"
+                fri_text = f"周涨跌幅 {week_decline*100:+.2f}% (下周四卖)"
             elif day_change < -0.03:
                 fri_subtype = "friday_day_down"
-                fri_text = f"周五涨跌 {day_change*100:.2f}% (下周三卖)"
+                fri_text = f"周五涨跌幅 {day_change*100:+.2f}% (下周三卖)"
             elif day_change > 0.03 and week_decline > 0.05:
                 fri_subtype = "friday_strong"
-                fri_text = f"周强势: 日涨{day_change*100:.2f}%, 周涨{week_decline*100:.2f}% (下周一卖)"
+                fri_text = f"周强势: 日涨幅 {day_change*100:+.2f}%, 周涨幅 {week_decline*100:+.2f}% (下周一卖)"
             else:
                 fri_subtype = "friday_normal"
-                fri_text = f"周跌幅 {week_decline*100:.2f}%, 日涨跌 {day_change*100:.2f}% (下周一卖)"
+                fri_text = f"周涨跌幅 {week_decline*100:+.2f}%, 日涨跌幅 {day_change*100:+.2f}% (下周一卖)"
 
             self.fri_decline_var.set(fri_text)
-            self.fri_decline_label.configure(foreground='green' if fri_subtype else 'red')
+            self.fri_decline_label.configure(foreground='black' if fri_subtype else 'red')
         else:
             fri_subtype = None
-            self.fri_decline_var.set("周跌幅: 无数据")
+            self.fri_decline_var.set("周涨跌幅: 无数据")
             self.fri_decline_label.configure(foreground='gray')
 
         fri_signal = fri_weekday_ok and month_ok and close_ma['valid'] and fri_subtype is not None
         if fri_signal:
             self.fri_result_var.set(f"✓ 满足周五买入：{fri_subtype}")
-            self.fri_result_label.configure(foreground='green')
+            self.fri_result_label.configure(foreground='black')
         else:
             self.fri_result_var.set("✗ 不满足")
             self.fri_result_label.configure(foreground='gray')
 
         # ===== 策略1：两段式 3%/4% 回撤 =====
         self.sup_month_var.set(f"月份: {month}月 ({'排除' if month in EXCLUDE_MONTHS else '可交易'})")
-        self.sup_month_label.configure(foreground='green' if month_ok else 'red')
+        self.sup_month_label.configure(foreground='black' if month_ok else 'red')
 
         reference_candidates = []
         if yesterday_high is not None and not pd.isna(yesterday_high):
@@ -592,7 +603,7 @@ class WeekendStrategyFrame:
         if not reference_candidates:
             self.sup_ma_var.set("MA条件: 数据不足")
             self.sup_ma_label.configure(foreground='gray')
-            self.sup_ref_var.set("参考价/回撤线: 无数据")
+            self.sup_ref_var.set("参考价/跌幅线: 无数据")
             self.sup_ref_label.configure(foreground='gray')
             self.sup_drop_var.set("触发状态: 无法判断")
             self.sup_drop_label.configure(foreground='gray')
@@ -605,44 +616,64 @@ class WeekendStrategyFrame:
         ref_label, reference_price = max(reference_candidates, key=lambda item: item[1])
         first_stage_price = reference_price * (1 - STRATEGY1_FIRST_STAGE)
         second_stage_price = reference_price * (1 - STRATEGY1_SECOND_STAGE)
+        current_drawdown_pct = max(0.0, (reference_price - low_price) / reference_price * 100)
 
         self.sup_ref_var.set(
-            f"参考价: {ref_label}={reference_price:.3f} | 3%线={first_stage_price:.3f} | 4%线={second_stage_price:.3f}"
+            f"参考价: {ref_label}={reference_price:.3f} | -3%跌幅线={first_stage_price:.3f} | -4%跌幅线={second_stage_price:.3f}"
         )
         self.sup_ref_label.configure(foreground='blue')
 
         strategy1_entry_price = None
-        strategy1_trigger_text = "触发状态: 未到3%线"
-        strategy1_entry_text = "策略1买点: 未到3%线"
+        signed_drawdown_pct = -current_drawdown_pct
+        strategy1_trigger_text = f"触发状态: 当前最低相对参考价 {signed_drawdown_pct:+.2f}%，未到-3%跌幅线"
+        strategy1_entry_text = "策略1买点: 未到-3%跌幅线"
         strategy1_triggered = False
 
         if open_price <= second_stage_price:
             strategy1_entry_price = open_price
-            strategy1_trigger_text = f"触发状态: 开盘直接低于4%线，按开盘价 {open_price:.3f}"
+            strategy1_trigger_text = (
+                f"触发状态: 当前最低相对参考价 {signed_drawdown_pct:+.2f}%，"
+                f"开盘直接低于-4%跌幅线，按开盘价 {open_price:.3f}"
+            )
             strategy1_entry_text = f"策略1买点: 开盘价 {open_price:.3f}"
             strategy1_triggered = True
         elif low_price <= second_stage_price:
             strategy1_entry_price = second_stage_price
-            strategy1_trigger_text = f"触发状态: 盘中触达4%线，按4%线 {second_stage_price:.3f}"
-            strategy1_entry_text = f"策略1买点: 4%线 {second_stage_price:.3f}"
+            strategy1_trigger_text = (
+                f"触发状态: 当前最低相对参考价 {signed_drawdown_pct:+.2f}%，"
+                f"盘中触达-4%跌幅线，按-4%跌幅线 {second_stage_price:.3f}"
+            )
+            strategy1_entry_text = f"策略1买点: -4%跌幅线 {second_stage_price:.3f}"
             strategy1_triggered = True
         elif low_price <= first_stage_price:
             if close_confirmed:
                 if price >= first_stage_price:
                     strategy1_entry_price = first_stage_price
-                    strategy1_trigger_text = f"触发状态: 收盘重新站回3%线，按3%线 {first_stage_price:.3f}"
-                    strategy1_entry_text = f"策略1买点: 3%线 {first_stage_price:.3f}"
+                    strategy1_trigger_text = (
+                        f"触发状态: 当前最低相对参考价 {signed_drawdown_pct:+.2f}%，"
+                        f"收盘重新站回-3%跌幅线，按-3%跌幅线 {first_stage_price:.3f}"
+                    )
+                    strategy1_entry_text = f"策略1买点: -3%跌幅线 {first_stage_price:.3f}"
                     strategy1_triggered = True
                 else:
-                    strategy1_trigger_text = "触发状态: 跌到3%-4%区间，但收盘未站回3%线"
-                    strategy1_entry_text = "策略1买点: 收盘未站回3%线，今日放弃"
+                    strategy1_trigger_text = (
+                        f"触发状态: 当前最低相对参考价 {signed_drawdown_pct:+.2f}%，"
+                        "跌到-3%~-4%区间，但收盘未站回-3%跌幅线"
+                    )
+                    strategy1_entry_text = "策略1买点: 收盘未站回-3%跌幅线，今日放弃"
             else:
                 if price >= first_stage_price:
-                    strategy1_trigger_text = "触发状态: 已回到3%线之上，需收盘确认后才能按3%线买入"
-                    strategy1_entry_text = f"策略1买点: 若收盘确认，将按3%线 {first_stage_price:.3f}"
+                    strategy1_trigger_text = (
+                        f"触发状态: 当前最低相对参考价 {signed_drawdown_pct:+.2f}%，"
+                        "已回到-3%跌幅线之上，需收盘确认后才能按-3%跌幅线买入"
+                    )
+                    strategy1_entry_text = f"策略1买点: 若收盘确认，将按-3%跌幅线 {first_stage_price:.3f}"
                 else:
-                    strategy1_trigger_text = "触发状态: 已进入3%-4%区间，继续观察4%线或收盘回到3%线"
-                    strategy1_entry_text = f"策略1买点: 候选3%线 {first_stage_price:.3f} / 4%线 {second_stage_price:.3f}"
+                    strategy1_trigger_text = (
+                        f"触发状态: 当前最低相对参考价 {signed_drawdown_pct:+.2f}%，"
+                        "已进入-3%~-4%区间，继续观察-4%跌幅线或收盘回到-3%跌幅线"
+                    )
+                    strategy1_entry_text = f"策略1买点: 候选-3%跌幅线 {first_stage_price:.3f} / -4%跌幅线 {second_stage_price:.3f}"
 
         strategy1_check_price = strategy1_entry_price if strategy1_entry_price is not None else price
         strategy1_ma = self._evaluate_ma_filters(
@@ -654,17 +685,17 @@ class WeekendStrategyFrame:
 
         ma_hint = "（以前一交易日均线检查）" if not realtime_mode else "（按前一交易日均线实时估算）"
         self.sup_ma_var.set(f"{strategy1_ma['text']}{ma_hint}")
-        self.sup_ma_label.configure(foreground='green' if strategy1_ma['valid'] else 'red')
+        self.sup_ma_label.configure(foreground='black' if strategy1_ma['valid'] else 'red')
 
         self.sup_drop_var.set(strategy1_trigger_text)
-        self.sup_drop_label.configure(foreground='green' if strategy1_triggered else '#CC7A00')
+        self.sup_drop_label.configure(foreground='black' if strategy1_triggered else '#CC7A00')
         self.sup_entry_var.set(strategy1_entry_text)
-        self.sup_entry_label.configure(foreground='green' if strategy1_triggered else '#1F4E79')
+        self.sup_entry_label.configure(foreground='black' if strategy1_triggered else '#1F4E79')
 
         strategy1_signal = month_ok and strategy1_ma['valid'] and strategy1_triggered
         if strategy1_signal:
             self.sup_result_var.set("✓ 满足策略1买入")
-            self.sup_result_label.configure(foreground='green')
+            self.sup_result_label.configure(foreground='black')
         else:
             self.sup_result_var.set("✗ 不满足")
             self.sup_result_label.configure(foreground='gray')
@@ -686,14 +717,14 @@ class WeekendStrategyFrame:
         strategy1_stop = price * STRATEGY1_STOP_LOSS_RATE
         original_stop = price * ORIGINAL_STOP_LOSS_RATE
         self.stop_loss_var.set(
-            f"策略1 {strategy1_stop:.3f} (-2.5%) | 周四/周五 {original_stop:.3f} (-3.5%)"
+            f"策略1 {strategy1_stop:.3f} (止损跌幅 -2.5%) | 周四/周五 {original_stop:.3f} (止损跌幅 -3.5%)"
         )
 
         self.sell_rule_var.set(
-            f"策略1卖点: 前{STRATEGY1_REBOUND_LOOKBACK}日低点反弹{int(STRATEGY1_REBOUND_THRESHOLD*100)}%，盘中卖，最短持有{STRATEGY1_REBOUND_MIN_HOLD}TD"
+            f"策略1卖点: 前{STRATEGY1_REBOUND_LOOKBACK}日低点反弹涨幅 +{int(STRATEGY1_REBOUND_THRESHOLD*100)}%，盘中卖，最短持有{STRATEGY1_REBOUND_MIN_HOLD}TD"
         )
         self.sell_rule2_var.set(
-            f"周四/周五卖点: 前{ORIGINAL_REBOUND_LOOKBACK}日低点反弹{int(ORIGINAL_REBOUND_THRESHOLD*100)}%，盘中卖，最短持有{ORIGINAL_REBOUND_MIN_HOLD}TD"
+            f"周四/周五卖点: 前{ORIGINAL_REBOUND_LOOKBACK}日低点反弹涨幅 +{int(ORIGINAL_REBOUND_THRESHOLD*100)}%，盘中卖，最短持有{ORIGINAL_REBOUND_MIN_HOLD}TD"
         )
 
     def update_kline_chart(self):
@@ -869,20 +900,26 @@ class WeekendStrategyFrame:
     def start_auto_refresh(self):
         """启动自动刷新"""
         try:
-            from weekend_data_updater import is_trading_time, get_etf_realtime_price
+            from weekend_data_updater import is_trading_time, get_market_now
 
             is_trading_day, is_trading_hours, _ = is_trading_time()
+            market_now = get_market_now()
+            current_minutes = market_now.hour * 60 + market_now.minute
+            market_open_minutes = 9 * 60 + 30
 
             if is_trading_day and is_trading_hours and self.auto_refresh_enabled:
                 self.refresh_realtime()
                 self.auto_refresh_id = self.parent.after(60000, self.start_auto_refresh)
                 self.realtime_var.set("自动刷新中...")
-                self.realtime_label.configure(foreground='green')
+                self.realtime_label.configure(foreground='black')
             elif is_trading_day and not is_trading_hours:
-                now = datetime.now()
-                if now.hour < 9 or (now.hour == 9 and now.minute < 30):
+                # 交易日但非连续竞价时，若已开盘过（午休/收盘后），仍先抓一次当日实时行情
+                if current_minutes >= market_open_minutes:
+                    self.refresh_realtime()
+
+                if market_now.hour < 9 or (market_now.hour == 9 and market_now.minute < 30):
                     self.realtime_var.set("盘前等待")
-                elif now.hour >= 15:
+                elif market_now.hour >= 15:
                     self.realtime_var.set("已收盘")
                 else:
                     self.realtime_var.set("午休")
@@ -898,7 +935,7 @@ class WeekendStrategyFrame:
     def refresh_realtime(self):
         """获取实时行情并更新显示"""
         try:
-            from weekend_data_updater import get_etf_realtime_price
+            from weekend_data_updater import get_etf_realtime_price, get_market_now
 
             realtime = get_etf_realtime_price()
             if realtime:
@@ -908,9 +945,9 @@ class WeekendStrategyFrame:
                 source = realtime.get('source', '')
 
                 self.realtime_var.set(f"{price:.3f} ({time_str}) [{source}]")
-                self.realtime_label.configure(foreground='green')
+                self.realtime_label.configure(foreground='black')
 
-                now = datetime.now().strftime('%H:%M:%S')
+                now = get_market_now().strftime('%H:%M:%S')
                 self.refresh_time_var.set(f"数据更新: {now}")
 
                 self.update_display_realtime()
@@ -931,9 +968,11 @@ class WeekendStrategyFrame:
 
         date_str = self.realtime_price.get('date')
         try:
-            today = pd.to_datetime(date_str) if date_str else datetime.now()
+            from weekend_data_updater import get_market_now
+            today = pd.to_datetime(date_str) if date_str else get_market_now()
         except Exception:
-            today = datetime.now()
+            from weekend_data_updater import get_market_now
+            today = get_market_now()
 
         weekday = today.weekday()
         month = today.month
@@ -1007,7 +1046,16 @@ class WeekendStrategyFrame:
     def on_update_complete(self, result):
         """数据更新完成回调"""
         self.load_data()
-        messagebox.showinfo("完成", f"数据更新完成\n{result}")
+        try:
+            from weekend_data_updater import is_trading_time
+            is_trading_day, _, _ = is_trading_time()
+            if is_trading_day:
+                self.refresh_realtime()
+        except Exception:
+            pass
+
+        self.status_var.set("数据更新完成")
+        messagebox.showinfo("更新结果", result)
 
     def on_update_error(self, error):
         """数据更新错误回调"""
@@ -1033,7 +1081,7 @@ class WeekendStrategyFrame:
 
 【历史表现】
 - 总交易: 249
-- 成功率: 58.23%
+- 成功率: +58.23%
 - 年度独立累计净收益: 1064.14万
 - 最大年度回撤: -31.60%
 - 收益回撤比: 3.74
@@ -1042,23 +1090,23 @@ class WeekendStrategyFrame:
 【策略参数】
 ================================================================================
 - MA30阈值: 0.99 (价格需>MA30*0.99)
-- MA30最大距离: 20%
-- MA5最大距离: 5%
-- MA10最大距离: 12%
+- MA30最大距离: +20%
+- MA5最大距离: +5%
+- MA10最大距离: +12%
 - 排除月份: 12月
-- 策略1止损: 2.5%
-- 周四/周五止损: 3.5%
+- 策略1止损跌幅: -2.5%
+- 周四/周五止损跌幅: -3.5%
 
 ================================================================================
 【策略1：两段式 3%/4% 回撤买入】
 ================================================================================
 1. 参考价 R = max(昨天高点, 前天高点, 当天开盘价)
-2. 若开盘 <= 4% 回撤线，则按开盘价买入
-3. 否则若盘中最低 <= 4% 回撤线，则按 4% 回撤线买入
-4. 否则若盘中最低 <= 3% 回撤线，且收盘 >= 3% 回撤线，则按 3% 回撤线买入
+2. 若开盘 <= -4% 跌幅线，则按开盘价买入
+3. 否则若盘中最低 <= -4% 跌幅线，则按 -4% 跌幅线买入
+4. 否则若盘中最低 <= -3% 跌幅线，且收盘 >= -3% 跌幅线，则按 -3% 跌幅线买入
 5. 以前一交易日均线 + 实际买入价检查 MA 框架
-6. 持有 3 个交易日，止损 2.5%
-7. 卖点优化：前3日最低点反弹8%时，盘中阈值卖，最短持有3TD
+6. 持有 3 个交易日，止损跌幅 -2.5%
+7. 卖点优化：前3日最低点反弹涨幅 +8% 时，盘中阈值卖，最短持有3TD
 
 ================================================================================
 【周四策略】
@@ -1066,10 +1114,10 @@ class WeekendStrategyFrame:
 1. 当日是周四
 2. 非12月
 3. MA条件满足
-4. 本周相对上周最后交易日跌幅:
-   - 2%~4%: thursday_2_4，下周二卖
-   - 4%~6%: thursday_4_6，下周四卖
-   - ≥6%: thursday_6plus，下周四卖
+4. 本周相对上周最后交易日涨跌幅:
+   - -4%~-2%: thursday_2_4，下周二卖
+   - -6%~-4%: thursday_4_6，下周四卖
+   - <= -6%: thursday_6plus，下周四卖
 
 ================================================================================
 【周五策略】
@@ -1078,11 +1126,11 @@ class WeekendStrategyFrame:
 2. 非12月
 3. MA条件满足
 4. 子类型:
-   - friday_week_down: 本周跌超3%，下周四卖
-   - friday_day_down: 周五单日跌超3%，下周三卖
-   - friday_strong: 周五涨超3%且本周涨超5%，下周一卖
+   - friday_week_down: 本周跌超 -3%，下周四卖
+   - friday_day_down: 周五单日跌超 -3%，下周三卖
+   - friday_strong: 周五涨超 +3% 且本周涨超 +5%，下周一卖
    - friday_normal: 其他情况，下周一卖
-5. 卖点优化：前1日最低点反弹5%时，盘中阈值卖，最短持有2TD
+5. 卖点优化：前1日最低点反弹涨幅 +5% 时，盘中阈值卖，最短持有2TD
 ================================================================================
 """
         text.insert(tk.END, strategy_text)
