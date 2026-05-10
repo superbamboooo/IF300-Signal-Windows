@@ -664,11 +664,14 @@ class WeekendStrategyFrame:
                     strategy1_entry_text = "策略1买点: 盘中两段式未成交，继续检查收盘相对当天最高价补买"
             else:
                 if price >= first_stage_price:
+                    strategy1_entry_price = first_stage_price
+                    strategy1_entry_mode = "rebound_to_3pct_by_close_realtime"
                     strategy1_trigger_text = (
                         f"盘中触发状态: 当前最低相对参考价 {signed_drawdown_pct:+.2f}%，"
-                        "已回到-3%跌幅线之上，需收盘确认后才能按-3%跌幅线买入"
+                        "按当前实时收盘口径，已回到-3%跌幅线之上"
                     )
-                    strategy1_entry_text = f"策略1买点: 若收盘确认，将按-3%跌幅线 {first_stage_price:.3f}"
+                    strategy1_entry_text = f"策略1买点: 按当前实时收盘口径，可按-3%跌幅线 {first_stage_price:.3f}"
+                    strategy1_triggered = True
                 else:
                     strategy1_trigger_text = (
                         f"盘中触发状态: 当前最低相对参考价 {signed_drawdown_pct:+.2f}%，"
@@ -702,17 +705,23 @@ class WeekendStrategyFrame:
                         strategy1_entry_text = "策略1买点: 收盘相对当天最高价也未达到-3%补买条件，今日放弃"
             else:
                 if price <= today_high_second_stage_price:
+                    strategy1_entry_price = price
+                    strategy1_entry_mode = "today_high_close_4pct_realtime"
                     strategy1_trigger_text = (
                         f"盘中触发状态: 当前相对今日最高价 {(price - high_price) / high_price * 100:+.2f}%，"
-                        f"若收盘保持，将按收盘价触发今高-4%补买"
+                        f"按当前实时收盘口径，已触发今高-4%补买"
                     )
-                    strategy1_entry_text = f"策略1买点: 若收盘确认，将按收盘价 {price:.3f}（今高-4%补买）"
+                    strategy1_entry_text = f"策略1买点: 按当前实时收盘口径，可按收盘价 {price:.3f}（今高-4%补买）"
+                    strategy1_triggered = True
                 elif price <= today_high_first_stage_price:
+                    strategy1_entry_price = price
+                    strategy1_entry_mode = "today_high_close_3pct_realtime"
                     strategy1_trigger_text = (
                         f"盘中触发状态: 当前相对今日最高价 {(price - high_price) / high_price * 100:+.2f}%，"
-                        f"若收盘保持，将按收盘价触发今高-3%补买"
+                        f"按当前实时收盘口径，已触发今高-3%补买"
                     )
-                    strategy1_entry_text = f"策略1买点: 若收盘确认，将按收盘价 {price:.3f}（今高-3%补买）"
+                    strategy1_entry_text = f"策略1买点: 按当前实时收盘口径，可按收盘价 {price:.3f}（今高-3%补买）"
+                    strategy1_triggered = True
 
         strategy1_check_price = strategy1_entry_price if strategy1_entry_price is not None else price
         strategy1_ma = self._evaluate_ma_filters(
