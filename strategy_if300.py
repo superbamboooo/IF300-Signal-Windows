@@ -104,6 +104,7 @@ class IF300StrategyFrame:
 
         # 实时行情相关
         self.realtime_price = None
+        self.intraday_snapshot = None
         self.auto_refresh_id = None
         self.auto_refresh_enabled = True
 
@@ -169,7 +170,7 @@ class IF300StrategyFrame:
         self.realtime_label.pack(side=tk.LEFT, padx=(5, 0))
 
         # 数据更新时间
-        self.refresh_time_var = tk.StringVar(value="数据更新: --")
+        self.refresh_time_var = tk.StringVar(value="最新刷新: --")
         ttk.Label(row2, textvariable=self.refresh_time_var, font=('微软雅黑', 14), foreground='gray').pack(side=tk.RIGHT, padx=5)
 
         # ===== 信号显示区 =====
@@ -721,6 +722,16 @@ class IF300StrategyFrame:
 
     def start_auto_refresh(self):
         """启动自动刷新"""
+        if self.auto_refresh_id is not None:
+            try:
+                self.parent.after_cancel(self.auto_refresh_id)
+            except Exception:
+                pass
+            self.auto_refresh_id = None
+
+        if not self.auto_refresh_enabled:
+            return
+
         try:
             from data_updater import is_trading_time, get_market_now
 
@@ -746,13 +757,64 @@ class IF300StrategyFrame:
                 else:
                     self.realtime_var.set("午休")
                 self.realtime_label.configure(foreground='gray')
-                self.auto_refresh_id = self.parent.after(300000, self.start_auto_refresh)
+                if self.auto_refresh_enabled:
+                    self.auto_refresh_id = self.parent.after(300000, self.start_auto_refresh)
             else:
                 self.realtime_var.set("休市")
                 self.realtime_label.configure(foreground='gray')
         except Exception as e:
             self.realtime_var.set("错误")
             self.realtime_label.configure(foreground='red')
+
+    def set_active(self, active):
+        """设置当前页是否为活动页，只刷新当前页。"""
+        self.auto_refresh_enabled = active
+        if not active:
+            if self.auto_refresh_id is not None:
+                try:
+                    self.parent.after_cancel(self.auto_refresh_id)
+                except Exception:
+                    pass
+                self.auto_refresh_id = None
+            return
+        self.start_auto_refresh()
+
+    def _merge_intraday_snapshot(self, realtime):
+        """维护当日期货实时开高低收快照。"""
+        from data_updater import get_market_now
+
+        date_str = realtime.get('date')
+        try:
+            trade_date = pd.to_datetime(date_str).date() if date_str else get_market_now().date()
+        except Exception:
+            trade_date = get_market_now().date()
+
+        price = realtime.get('price', 0) or 0
+        open_price = realtime.get('open', price) or price
+        high_price = realtime.get('high', price) or price
+        low_price = realtime.get('low', price) or price
+
+        if self.intraday_snapshot is None or self.intraday_snapshot.get('date') != trade_date:
+            self.intraday_snapshot = {
+                'date': trade_date,
+                'open': open_price,
+                'high': max(high_price, price, open_price),
+                'low': min(low_price, price, open_price),
+            }
+        else:
+            snap = self.intraday_snapshot
+            if not snap.get('open') and open_price:
+                snap['open'] = open_price
+            snap['high'] = max(snap.get('high', high_price), high_price, price, snap.get('open', price))
+            snap['low'] = min(snap.get('low', low_price), low_price, price, snap.get('open', price))
+
+        merged = dict(realtime)
+        merged['date'] = trade_date.strftime('%Y-%m-%d')
+        merged['open'] = self.intraday_snapshot['open']
+        merged['high'] = self.intraday_snapshot['high']
+        merged['low'] = self.intraday_snapshot['low']
+        merged['price'] = price
+        return merged
 
     def refresh_realtime(self):
         """获取实时行情并更新显示"""
@@ -761,16 +823,16 @@ class IF300StrategyFrame:
 
             realtime = get_realtime_price()
             if realtime:
-                self.realtime_price = realtime
-                price = realtime['price']
-                time_str = realtime['time'][:5]
-                source = realtime.get('source', '')
+                self.realtime_price = self._merge_intraday_snapshot(realtime)
+                price = self.realtime_price['price']
+                time_str = self.realtime_price['time'][:5]
+                source = self.realtime_price.get('source', '')
 
                 self.realtime_var.set(f"{price:.2f} ({time_str}) [{source}]")
                 self.realtime_label.configure(foreground='black')
 
                 now = datetime.now().strftime('%H:%M:%S')
-                self.refresh_time_var.set(f"数据更新: {now}")
+                self.refresh_time_var.set(f"最新刷新: {now}")
 
                 self.update_display_realtime()
             else:

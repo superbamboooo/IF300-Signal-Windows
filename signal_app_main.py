@@ -50,13 +50,20 @@ class MultiStrategyApp:
         self.if300_strategy = IF300StrategyFrame(self.if300_frame)
         self.weekend_strategy = WeekendStrategyFrame(self.weekend_frame)
 
+        # 默认显示周末效应页
+        self.notebook.select(self.weekend_frame)
+        self.if300_strategy.set_active(False)
+        self.weekend_strategy.set_active(True)
+
         # 绑定标签切换事件
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
 
     def on_tab_changed(self, event):
         """标签页切换事件"""
-        # 可以在这里处理标签切换时的逻辑
-        pass
+        current_tab = self.notebook.select()
+        is_if300 = current_tab == str(self.if300_frame)
+        self.if300_strategy.set_active(is_if300)
+        self.weekend_strategy.set_active(not is_if300)
 
 
 def main():
