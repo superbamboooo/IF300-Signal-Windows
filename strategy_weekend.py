@@ -158,18 +158,16 @@ class WeekendStrategyFrame:
         self.refresh_time_var = tk.StringVar(value="数据更新: --")
         ttk.Label(row2, textvariable=self.refresh_time_var, font=('微软雅黑', 14), foreground='gray').pack(side=tk.RIGHT, padx=5)
 
-        # ===== 信号显示区 =====
-        signal_frame = ttk.LabelFrame(main_frame, text="交易信号条件", padding="10")
-        signal_frame.pack(fill=tk.X, pady=(0, 10))
-
-        signal_cols = ttk.Frame(signal_frame)
-        signal_cols.pack(fill=tk.X)
-        signal_cols.columnconfigure(0, weight=1, uniform='signal_cols')
-        signal_cols.columnconfigure(1, weight=1, uniform='signal_cols')
-        signal_cols.columnconfigure(2, weight=1, uniform='signal_cols')
+        # ===== 信号区与参考买卖规则同层展示 =====
+        top_sections = ttk.Frame(main_frame)
+        top_sections.pack(fill=tk.X, pady=(0, 10))
+        top_sections.columnconfigure(0, weight=16, minsize=420)
+        top_sections.columnconfigure(1, weight=11, minsize=290)
+        top_sections.columnconfigure(2, weight=11, minsize=290)
+        top_sections.columnconfigure(3, weight=9, minsize=310)
 
         # 左列：策略1两段式买入（最高优先级）
-        left_frame = ttk.LabelFrame(signal_cols, text="策略1 两段式买入 (V10.03)", padding="5")
+        left_frame = ttk.LabelFrame(top_sections, text="策略1 两段式买入 (V10.03)", padding="5")
         left_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 5))
 
         self.sup_month_var = tk.StringVar(value="月份: --")
@@ -191,7 +189,7 @@ class WeekendStrategyFrame:
         self.sup_result_label = make_signal_label(left_frame, self.sup_result_var, ('微软雅黑', 18, 'bold'), pady=(5, 0))
 
         # 中列：周四买入条件
-        mid_frame = ttk.LabelFrame(signal_cols, text="周四买入条件", padding="5")
+        mid_frame = ttk.LabelFrame(top_sections, text="周四买入条件", padding="5")
         mid_frame.grid(row=0, column=1, sticky='nsew', padx=5)
 
         self.thu_weekday_var = tk.StringVar(value="星期: --")
@@ -210,7 +208,7 @@ class WeekendStrategyFrame:
         self.thu_result_label = make_signal_label(mid_frame, self.thu_result_var, ('微软雅黑', 18, 'bold'), pady=(5, 0))
 
         # 右列：周五买入条件
-        right_frame = ttk.LabelFrame(signal_cols, text="周五买入条件", padding="5")
+        right_frame = ttk.LabelFrame(top_sections, text="周五买入条件", padding="5")
         right_frame.grid(row=0, column=2, sticky='nsew', padx=(5, 0))
 
         self.fri_weekday_var = tk.StringVar(value="星期: --")
@@ -228,40 +226,42 @@ class WeekendStrategyFrame:
         self.fri_result_var = tk.StringVar(value="")
         self.fri_result_label = make_signal_label(right_frame, self.fri_result_var, ('微软雅黑', 18, 'bold'), pady=(5, 0))
 
-        # ===== 可开仓价格区间与卖点规则 =====
-        price_range_frame = ttk.LabelFrame(main_frame, text="参考买卖规则", padding="10")
-        price_range_frame.pack(fill=tk.X, pady=(0, 10))
+        # 第四列：参考买卖规则
+        price_range_frame = ttk.LabelFrame(top_sections, text="参考买卖规则", padding="10")
+        price_range_frame.grid(row=0, column=3, sticky='nsew', padx=(10, 0))
 
-        price_range_cols = ttk.Frame(price_range_frame)
-        price_range_cols.pack(fill=tk.X)
+        self.buy_price_range_var = tk.StringVar(value="买入区间: -- ~ --")
+        self.buy_price_range_label = make_signal_label(
+            price_range_frame, self.buy_price_range_var, ('微软雅黑', 15, 'bold'), pady=2
+        )
 
-        range_frame = ttk.Frame(price_range_cols)
-        range_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        ttk.Label(range_frame, text="买入区间:", font=('微软雅黑', 15, 'bold')).pack(side=tk.LEFT)
-        self.buy_price_range_var = tk.StringVar(value="-- ~ --")
-        ttk.Label(range_frame, textvariable=self.buy_price_range_var, font=('微软雅黑', 18, 'bold'), foreground='black').pack(side=tk.LEFT, padx=(5, 30))
-
-        ttk.Label(range_frame, text="止损价(跌幅):", font=('微软雅黑', 15, 'bold')).pack(side=tk.LEFT)
-        self.stop_loss_var = tk.StringVar(value="--")
-        ttk.Label(range_frame, textvariable=self.stop_loss_var, font=('微软雅黑', 15, 'bold'), foreground='#8B0000').pack(side=tk.LEFT, padx=(5, 0))
-
-        sell_frame = ttk.Frame(price_range_frame)
-        sell_frame.pack(fill=tk.X, pady=(8, 0))
+        self.stop_loss_var = tk.StringVar(value="止损价(跌幅): --")
+        self.stop_loss_label = make_signal_label(
+            price_range_frame, self.stop_loss_var, ('微软雅黑', 14), pady=4
+        )
 
         self.sell_rule_var = tk.StringVar(value="策略1卖出规则: --")
-        ttk.Label(sell_frame, textvariable=self.sell_rule_var, font=('微软雅黑', 14)).pack(anchor=tk.W)
+        self.sell_rule_label = make_signal_label(
+            price_range_frame, self.sell_rule_var, ('微软雅黑', 14), pady=4
+        )
 
         self.sell_rule2_var = tk.StringVar(value="周四/周五卖出规则: --")
-        ttk.Label(sell_frame, textvariable=self.sell_rule2_var, font=('微软雅黑', 14)).pack(anchor=tk.W)
+        self.sell_rule2_label = make_signal_label(
+            price_range_frame, self.sell_rule2_var, ('微软雅黑', 14), pady=4
+        )
 
-        # ===== K线图区 =====
+        # ===== K线图区：横向贯穿 =====
         chart_frame = ttk.LabelFrame(main_frame, text="K线图", padding="5")
         chart_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        self.chart_frame = chart_frame
 
         self.fig, self.ax = plt.subplots(figsize=(10, 5))
         self.canvas = FigureCanvasTkAgg(self.fig, master=chart_frame)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        chart_widget = self.canvas.get_tk_widget()
+        chart_widget.pack(fill=tk.BOTH, expand=True)
+        self.chart_widget = chart_widget
+        self._chart_resize_job = None
+        chart_frame.bind("<Configure>", self.on_chart_resize, add="+")
 
         self.kline_data = None
         self.hover_annotation = None
@@ -276,6 +276,38 @@ class WeekendStrategyFrame:
         ttk.Label(status_frame, textvariable=self.status_var, font=('微软雅黑', 10)).pack(side=tk.LEFT)
 
         ttk.Button(status_frame, text="策略说明", command=self.show_strategy_info).pack(side=tk.RIGHT)
+
+    def on_chart_resize(self, event):
+        """图表区域尺寸变化时，让 matplotlib 真正跟着容器变宽变高"""
+        if event.width < 50 or event.height < 50:
+            return
+
+        if self._chart_resize_job is not None:
+            try:
+                self.parent.after_cancel(self._chart_resize_job)
+            except Exception:
+                pass
+
+        self._chart_resize_job = self.parent.after(80, self.resize_chart_to_widget)
+
+    def resize_chart_to_widget(self):
+        """按当前 Tk 容器尺寸重设 figure 大小"""
+        self._chart_resize_job = None
+
+        if not hasattr(self, 'chart_widget') or not hasattr(self, 'chart_frame'):
+            return
+
+        self.chart_frame.update_idletasks()
+        width = max(self.chart_frame.winfo_width() - 12, 50)
+        height = max(self.chart_frame.winfo_height() - 36, 50)
+        if width < 50 or height < 50:
+            return
+
+        self.chart_widget.configure(width=width, height=height)
+        dpi = self.fig.get_dpi() or 100
+        self.fig.set_size_inches(width / dpi, height / dpi, forward=True)
+        self.fig.subplots_adjust(left=0.055, right=0.995, top=0.92, bottom=0.16)
+        self.canvas.draw()
 
     def load_data(self):
         """加载K线数据"""
@@ -751,8 +783,8 @@ class WeekendStrategyFrame:
     def update_price_range(self, price, ma30):
         """计算并更新可开仓价格区间"""
         if pd.isna(ma30):
-            self.buy_price_range_var.set("MA30数据不足")
-            self.stop_loss_var.set("--")
+            self.buy_price_range_var.set("买入区间: MA30数据不足")
+            self.stop_loss_var.set("止损价(跌幅): --")
             self.sell_rule_var.set("策略1卖出规则: --")
             self.sell_rule2_var.set("周四/周五卖出规则: --")
             return
@@ -760,12 +792,13 @@ class WeekendStrategyFrame:
         # 买入区间: MA30*0.99 ~ MA30*1.20
         buy_min = ma30 * MA30_THRESHOLD
         buy_max = ma30 * (1 + MA30_MAX_DIST)
-        self.buy_price_range_var.set(f"{buy_min:.3f} ~ {buy_max:.3f}")
+        self.buy_price_range_var.set(f"买入区间: {buy_min:.3f} ~ {buy_max:.3f}")
 
         strategy1_stop = price * STRATEGY1_STOP_LOSS_RATE
         original_stop = price * ORIGINAL_STOP_LOSS_RATE
         self.stop_loss_var.set(
-            f"策略1 {strategy1_stop:.3f} (止损跌幅 -2.5%) | 周四/周五 {original_stop:.3f} (止损跌幅 -3.5%)"
+            f"止损价(跌幅): 策略1 {strategy1_stop:.3f} (止损跌幅 -2.5%) | "
+            f"周四/周五 {original_stop:.3f} (止损跌幅 -3.5%)"
         )
 
         self.sell_rule_var.set(
@@ -838,9 +871,10 @@ class WeekendStrategyFrame:
         self.ax.grid(True, alpha=0.3)
         self.ax.set_title('创业板ETF (159915) K线图 - 周末效应 V10.03', fontsize=12)
 
-        self.fig.tight_layout()
+        self.fig.subplots_adjust(left=0.055, right=0.995, top=0.92, bottom=0.16)
         self.hover_annotation = None
         self.hover_vline = None
+        self.resize_chart_to_widget()
         self.canvas.draw()
 
     def on_mouse_move(self, event):

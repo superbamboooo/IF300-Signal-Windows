@@ -26,8 +26,8 @@ class MultiStrategyApp:
     def __init__(self, root):
         self.root = root
         self.root.title("多策略交易信号系统")
-        self.root.geometry("1100x900")
-        self.root.minsize(1000, 800)
+        self.root.geometry("1450x900")
+        self.root.minsize(1350, 800)
 
         # 创建主框架
         self.create_widgets()
